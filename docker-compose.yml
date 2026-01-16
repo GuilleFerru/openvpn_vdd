@@ -8,7 +8,18 @@ services:
     ports:
       - "1194:1194/udp"
     volumes:
-      - openvpn_data:/etc/openvpn
+      - openvpn_openvpn_data:/etc/openvpn
+
+  filebrowser:
+    image: filebrowser/filebrowser
+    container_name: openvpn-files
+    restart: always
+    ports:
+      - "8585:80"
+    volumes:
+      - ./clients:/srv
+    command: --noauth
 
 volumes:
-  openvpn_data:
+  openvpn_openvpn_data:
+    external: true
