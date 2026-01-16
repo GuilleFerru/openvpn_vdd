@@ -1,12 +1,56 @@
-from flask import Flask, render_template_string, request, send_file, jsonify
+from flask import Flask, render_template_string, request, send_file, jsonify, redirect, url_for, session
+from functools import wraps
 import subprocess
 import os
 import re
+import secrets
 
 app = Flask(__name__)
+app.secret_key = os.environ.get('SECRET_KEY', secrets.token_hex(32))
 
 VOLUME_NAME = "openvpn_openvpn_data"
 CLIENTS_DIR = "/app/clients"
+ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin123')  # Cambiar en docker-compose
+
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not session.get('logged_in'):
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+LOGIN_TEMPLATE = '''
+<!DOCTYPE html>
+<html>
+<head>
+    <title>OpenVPN Admin - Login</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #1a1a2e; color: #eee; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .login-box { background: #16213e; padding: 40px; border-radius: 15px; width: 300px; text-align: center; }
+        h1 { color: #00d4ff; margin-bottom: 30px; }
+        input { padding: 12px; margin: 10px 0; border-radius: 5px; border: none; width: 100%; box-sizing: border-box; background: #0f3460; color: #fff; }
+        button { padding: 12px; margin-top: 20px; border-radius: 5px; border: none; width: 100%; background: #00d4ff; color: #1a1a2e; cursor: pointer; font-weight: bold; font-size: 16px; }
+        button:hover { background: #00a8cc; }
+        .error { color: #e94560; margin-top: 15px; }
+        .icon { font-size: 60px; margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+    <div class="login-box">
+        <div class="icon">🔐</div>
+        <h1>OpenVPN Admin</h1>
+        <form method="POST">
+            <input type="password" name="password" placeholder="Contraseña" required autofocus>
+            <button type="submit">Ingresar</button>
+        </form>
+        {% if error %}
+        <p class="error">{{ error }}</p>
+        {% endif %}
+    </div>
+</body>
+</html>
+'''
 
 HTML_TEMPLATE = '''
 <!DOCTYPE html>
@@ -36,10 +80,16 @@ HTML_TEMPLATE = '''
         .badge { display: inline-block; padding: 3px 8px; border-radius: 3px; font-size: 11px; }
         .badge-online { background: #4ecca3; color: #1a1a2e; }
         .badge-offline { background: #444; color: #888; }
+        .header { display: flex; justify-content: space-between; align-items: center; }
+        .btn-logout { background: #444; color: #fff; width: auto; padding: 8px 15px; font-size: 13px; }
+        .btn-logout:hover { background: #666; }
     </style>
 </head>
 <body>
-    <h1>🔐 OpenVPN Admin</h1>
+    <div class="header">
+        <h1>🔐 OpenVPN Admin</h1>
+        <a href="/logout"><button class="btn-logout">🚪 Cerrar sesión</button></a>
+    </div>
     
     <div class="card">
         <h2>📡 Clientes Conectados</h2>
@@ -213,11 +263,31 @@ HTML_TEMPLATE = '''
 </html>
 '''
 
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if session.get('logged_in'):
+        return redirect(url_for('index'))
+    error = None
+    if request.method == 'POST':
+        if request.form['password'] == ADMIN_PASSWORD:
+            session['logged_in'] = True
+            return redirect(url_for('index'))
+        else:
+            error = 'Contraseña incorrecta'
+    return render_template_string(LOGIN_TEMPLATE, error=error)
+
+@app.route('/logout')
+def logout():
+    session.pop('logged_in', None)
+    return redirect(url_for('login'))
+
 @app.route('/')
+@login_required
 def index():
     return render_template_string(HTML_TEMPLATE)
 
 @app.route('/api/clients')
+@login_required
 def list_clients():
     clients = []
     if os.path.exists(CLIENTS_DIR):
@@ -225,6 +295,7 @@ def list_clients():
     return jsonify({'clients': sorted(clients)})
 
 @app.route('/api/connected')
+@login_required
 def connected_clients():
     """Lee el status log de OpenVPN para ver clientes conectados"""
     clients = []
@@ -289,6 +360,7 @@ def format_bytes(bytes_num):
         return f"{bytes_num/(1024*1024):.1f}MB"
 
 @app.route('/api/create', methods=['POST'])
+@login_required
 def create_client():
     data = request.json
     name = data.get('name', '').strip()
@@ -335,6 +407,7 @@ def create_client():
         return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/api/revoke', methods=['POST'])
+@login_required
 def revoke_client():
     data = request.json
     name = data.get('name', '').strip()
@@ -430,6 +503,7 @@ def try_revoke_alternative(name, password):
         return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/api/delete', methods=['POST'])
+@login_required
 def delete_ovpn():
     """Elimina solo el archivo .ovpn sin revocar el certificado"""
     data = request.json
@@ -446,6 +520,7 @@ def delete_ovpn():
         return jsonify({'success': False, 'error': 'Archivo no encontrado'})
 
 @app.route('/download/<name>')
+@login_required
 def download(name):
     # Sanitizar nombre
     name = re.sub(r'[^a-zA-Z0-9_-]', '', name)

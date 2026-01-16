@@ -4,6 +4,9 @@ clients/*.ovpn
 # Mantener la carpeta clients
 !clients/.gitkeep
 
+# Variables de entorno (contienen contraseñas)
+.env
+
 # Sistema
 .DS_Store
 Thumbs.db

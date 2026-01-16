@@ -16,6 +16,8 @@ services:
     restart: always
     ports:
       - "8888:8080"
+    environment:
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-SecurePassword123}  # Cambiar por una contraseña segura
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./clients:/app/clients
