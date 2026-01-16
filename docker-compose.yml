@@ -15,7 +15,7 @@ services:
     container_name: openvpn-admin
     restart: always
     ports:
-      - "8080:8080"
+      - "8888:8080"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./clients:/app/clients
