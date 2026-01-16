@@ -4,13 +4,43 @@ import subprocess
 import os
 import re
 import secrets
+import json
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', secrets.token_hex(32))
 
 VOLUME_NAME = "openvpn_openvpn_data"
 CLIENTS_DIR = "/app/clients"
+CCD_DIR = "/app/ccd"
+CLIENTS_DB = "/app/clients/clients.json"
 ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin123')  # Cambiar en docker-compose
+
+# Rango de IPs para gateways: 10.8.0.100 - 10.8.0.254
+GATEWAY_IP_START = 100
+GATEWAY_IP_END = 254
+
+def load_clients_db():
+    """Cargar base de datos de clientes"""
+    if os.path.exists(CLIENTS_DB):
+        with open(CLIENTS_DB, 'r') as f:
+            return json.load(f)
+    return {'clients': {}, 'next_gateway_ip': GATEWAY_IP_START}
+
+def save_clients_db(db):
+    """Guardar base de datos de clientes"""
+    os.makedirs(os.path.dirname(CLIENTS_DB), exist_ok=True)
+    with open(CLIENTS_DB, 'w') as f:
+        json.dump(db, f, indent=2)
+
+def get_next_gateway_ip():
+    """Obtener siguiente IP disponible para gateway"""
+    db = load_clients_db()
+    ip = db.get('next_gateway_ip', GATEWAY_IP_START)
+    if ip > GATEWAY_IP_END:
+        return None  # Sin IPs disponibles
+    db['next_gateway_ip'] = ip + 1
+    save_clients_db(db)
+    return ip
 
 def login_required(f):
     @wraps(f)
@@ -107,6 +137,10 @@ HTML_TEMPLATE = '''
         <h2>➕ Crear nuevo cliente</h2>
         <form id="createForm">
             <input type="text" id="clientName" placeholder="Nombre del cliente (ej: gateway-01)" required>
+            <select id="clientType" style="background:#0f3460;color:#fff;padding:10px;border-radius:5px;width:100%;margin:5px 0;">
+                <option value="user">👤 Usuario (puede acceder a gateways)</option>
+                <option value="gateway">📡 Gateway (aislado de otros gateways)</option>
+            </select>
             <input type="password" id="caPassword" placeholder="Contraseña de la CA" required>
             <button type="submit">Crear Cliente</button>
         </form>
@@ -157,14 +191,17 @@ HTML_TEMPLATE = '''
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
                     name: document.getElementById('clientName').value,
-                    password: document.getElementById('caPassword').value
+                    password: document.getElementById('caPassword').value,
+                    type: document.getElementById('clientType').value
                 })
             });
             const data = await response.json();
             
             if (data.success) {
                 status.className = 'status success';
-                status.innerHTML = '✅ Cliente creado! <a href="/download/' + data.name + '" style="color:#00d4ff">Descargar ' + data.name + '.ovpn</a>';
+                const typeLabel = data.type === 'gateway' ? '📡 Gateway' : '👤 Usuario';
+                const ipInfo = data.ip ? ' (IP: ' + data.ip + ')' : '';
+                status.innerHTML = '✅ ' + typeLabel + ' creado!' + ipInfo + ' <a href="/download/' + data.name + '" style="color:#00d4ff">Descargar ' + data.name + '.ovpn</a>';
                 document.getElementById('clientName').value = '';
                 loadClients();
             } else {
@@ -240,11 +277,13 @@ HTML_TEMPLATE = '''
             const data = await response.json();
             const tbody = document.getElementById('clientList');
             tbody.innerHTML = data.clients.map(c => {
-                const isOnline = connectedClients.includes(c);
-                const badge = isOnline 
+                const isOnline = connectedClients.includes(c.name);
+                const statusBadge = isOnline 
                     ? '<span class="badge badge-online">● Online</span>' 
                     : '<span class="badge badge-offline">○ Offline</span>';
-                return '<tr><td>' + c + '</td><td>' + badge + '</td><td><a href="/download/' + c + '" style="color:#00d4ff">📥 Descargar</a></td></tr>';
+                const typeIcon = c.type === 'gateway' ? '📡' : '👤';
+                const ipInfo = c.ip ? ' <small style="color:#888">(' + c.ip + ')</small>' : '';
+                return '<tr><td>' + typeIcon + ' ' + c.name + ipInfo + '</td><td>' + statusBadge + '</td><td><a href="/download/' + c.name + '" style="color:#00d4ff">📥 Descargar</a></td></tr>';
             }).join('');
             
             btn.innerHTML = originalText;
@@ -309,9 +348,18 @@ def index():
 @login_required
 def list_clients():
     clients = []
+    db = load_clients_db()
     if os.path.exists(CLIENTS_DIR):
-        clients = [f.replace('.ovpn', '') for f in os.listdir(CLIENTS_DIR) if f.endswith('.ovpn')]
-    return jsonify({'clients': sorted(clients)})
+        for f in os.listdir(CLIENTS_DIR):
+            if f.endswith('.ovpn'):
+                name = f.replace('.ovpn', '')
+                client_info = db.get('clients', {}).get(name, {})
+                clients.append({
+                    'name': name,
+                    'type': client_info.get('type', 'user'),
+                    'ip': client_info.get('ip')
+                })
+    return jsonify({'clients': sorted(clients, key=lambda x: x['name'])})
 
 @app.route('/api/connected')
 @login_required
@@ -384,6 +432,7 @@ def create_client():
     data = request.json
     name = data.get('name', '').strip()
     password = data.get('password', '')
+    client_type = data.get('type', 'user')  # 'user' o 'gateway'
     
     if not name or not password:
         return jsonify({'success': False, 'error': 'Nombre y contraseña requeridos'})
@@ -392,7 +441,22 @@ def create_client():
     if not name.replace('-', '').replace('_', '').isalnum():
         return jsonify({'success': False, 'error': 'Nombre inválido (solo letras, números, guiones)'})
     
+    assigned_ip = None
+    
     try:
+        # Si es gateway, asignar IP fija
+        if client_type == 'gateway':
+            ip_last_octet = get_next_gateway_ip()
+            if ip_last_octet is None:
+                return jsonify({'success': False, 'error': 'No hay IPs disponibles para gateways'})
+            assigned_ip = f'10.8.0.{ip_last_octet}'
+            
+            # Crear archivo CCD con IP fija
+            os.makedirs(CCD_DIR, exist_ok=True)
+            with open(f'{CCD_DIR}/{name}', 'w') as f:
+                # ifconfig-push <IP cliente> <IP servidor>
+                f.write(f'ifconfig-push {assigned_ip} 10.8.0.1\n')
+        
         # Crear certificado del cliente
         cmd_create = f'docker run -v {VOLUME_NAME}:/etc/openvpn --rm -i kylemanna/openvpn easyrsa build-client-full {name} nopass'
         proc = subprocess.Popen(cmd_create, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -400,6 +464,9 @@ def create_client():
         
         if proc.returncode != 0:
             error_msg = stderr.decode()
+            # Limpiar CCD si falló
+            if client_type == 'gateway' and os.path.exists(f'{CCD_DIR}/{name}'):
+                os.remove(f'{CCD_DIR}/{name}')
             if 'password' in error_msg.lower() or 'pass phrase' in error_msg.lower() or 'bad decrypt' in error_msg.lower():
                 return jsonify({'success': False, 'error': 'Contraseña incorrecta'})
             if 'already exists' in error_msg.lower():
@@ -418,7 +485,15 @@ def create_client():
         with open(f'{CLIENTS_DIR}/{name}.ovpn', 'wb') as f:
             f.write(result.stdout)
         
-        return jsonify({'success': True, 'name': name})
+        # Guardar info del cliente en DB
+        db = load_clients_db()
+        db['clients'][name] = {
+            'type': client_type,
+            'ip': assigned_ip
+        }
+        save_clients_db(db)
+        
+        return jsonify({'success': True, 'name': name, 'type': client_type, 'ip': assigned_ip})
         
     except subprocess.TimeoutExpired:
         return jsonify({'success': False, 'error': 'Timeout - operación tardó demasiado'})

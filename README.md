@@ -2,10 +2,19 @@
 
 Servidor OpenVPN usando `kylemanna/openvpn`. Sin límite de conexiones simultáneas.
 
+## Características
+
+- ✅ Panel web de administración
+- ✅ Dos tipos de clientes: **Usuario** y **Gateway**
+- ✅ Gateways con IP fija (10.8.0.100+) y aislados entre sí
+- ✅ Usuarios pueden acceder a todos los gateways
+- ✅ Ver clientes conectados en tiempo real
+
 ## Requisitos
 
 - Docker y Docker Compose instalados
 - Puerto UDP 1194 disponible y abierto en firewall
+- Puerto TCP 8888 para panel de administración
 - IP pública del servidor
 
 ## Instalación en VM Linux
@@ -38,13 +47,42 @@ Ejemplo:
 - Te pedirá crear una contraseña para la CA (Autoridad Certificadora)
 - **ANOTALA** - La necesitarás cada vez que crees o revoques un cliente
 
-### 4. Iniciar el servidor
+### 4. Habilitar CCD (Client Config Directory)
 
 ```bash
-docker compose up -d
+./enable-ccd.sh
 ```
 
-### 5. Crear clientes
+Esto permite asignar IPs fijas a los gateways.
+
+### 5. Configurar contraseña del panel admin
+
+```bash
+echo "ADMIN_PASSWORD=TuContraseñaSegura" > .env
+```
+
+### 6. Iniciar el servidor
+
+```bash
+docker compose up -d --build
+```
+
+### 7. Acceder al panel de administración
+
+```
+http://<IP_SERVIDOR>:8888
+```
+
+## Tipos de clientes
+
+| Tipo | Rango IP | Puede ver otros | Uso |
+|------|----------|-----------------|-----|
+| 👤 Usuario | 10.8.0.2-99 | Sí, todos | Personal técnico |
+| 📡 Gateway | 10.8.0.100-254 | Solo servidor | IoT/ChirpStack |
+
+## Comandos CLI (alternativa al panel web)
+
+### Crear clientes
 
 ```bash
 ./create-client.sh nombre_usuario
