@@ -449,12 +449,27 @@ def revoke_client():
         stdout, stderr = proc.communicate(input=inputs, timeout=120)
         
         output = stdout.decode() + stderr.decode()
+        output_lower = output.lower()
         
-        if proc.returncode != 0:
-            if 'bad decrypt' in output.lower() or 'wrong pass' in output.lower():
-                return jsonify({'success': False, 'error': 'Contraseña incorrecta'})
-            if 'unable to find' in output.lower() or 'not found' in output.lower():
-                return jsonify({'success': False, 'error': f'Cliente "{name}" no encontrado'})
+        # Verificar si el certificado fue revocado exitosamente
+        # Buscar indicadores de éxito en el output
+        revoke_success = 'revoking certificate' in output_lower or 'revocation was successful' in output_lower or 'data base updated' in output_lower
+        
+        # Verificar errores específicos
+        if 'unable to find' in output_lower or 'not found' in output_lower or 'no such file' in output_lower:
+            # El cliente no existe - eliminar archivo .ovpn si existe
+            ovpn_file = f'{CLIENTS_DIR}/{name}.ovpn'
+            if os.path.exists(ovpn_file):
+                os.remove(ovpn_file)
+                return jsonify({'success': True, 'message': 'Cliente ya revocado, archivo eliminado'})
+            return jsonify({'success': False, 'error': f'Cliente "{name}" no encontrado'})
+        
+        # Si hubo error de password Y no hay indicadores de éxito
+        if ('bad decrypt' in output_lower or 'wrong pass' in output_lower) and not revoke_success:
+            return jsonify({'success': False, 'error': 'Contraseña incorrecta'})
+        
+        # Si el return code es error pero hay indicadores de éxito, considerar exitoso
+        if proc.returncode != 0 and not revoke_success:
             return jsonify({'success': False, 'error': output[:300]})
         
         # Eliminar archivo .ovpn
