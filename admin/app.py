@@ -421,47 +421,22 @@ def revoke_client():
         return jsonify({'success': False, 'error': 'Nombre inválido'})
     
     try:
-        # Usar script con inputs separados por el timing
-        # El revoke pide: 1) password para revoke, 2) "yes" para confirmar, 3) password para CRL
-        script = f'''
-import pexpect
-import sys
-
-child = pexpect.spawn('docker run -v {VOLUME_NAME}:/etc/openvpn --rm -i kylemanna/openvpn ovpn_revokeclient {name} remove', timeout=120)
-
-# Primer password (para revocar)
-child.expect(['pass phrase', 'Enter pass phrase', pexpect.TIMEOUT], timeout=30)
-child.sendline('{password}')
-
-# Confirmación "yes"
-child.expect(["Type the word 'yes'", 'yes', pexpect.TIMEOUT], timeout=30)
-child.sendline('yes')
-
-# Segundo password (para actualizar CRL) 
-child.expect(['pass phrase', 'Enter pass phrase', pexpect.TIMEOUT], timeout=30)
-child.sendline('{password}')
-
-child.expect(pexpect.EOF, timeout=60)
-print(child.before.decode() if child.before else "")
-sys.exit(child.exitstatus or 0)
-'''
+        # Usar EASYRSA_BATCH=1 para evitar confirmación "yes"
+        # Solo necesita password 2 veces (revoke + CRL update)
+        cmd = f'docker run -v {VOLUME_NAME}:/etc/openvpn --rm -i -e EASYRSA_BATCH=1 kylemanna/openvpn ovpn_revokeclient {name} remove'
+        proc = subprocess.Popen(cmd, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        # Enviar password dos veces (revoke + CRL)
+        inputs = f'{password}\n{password}\n'.encode()
+        stdout, stderr = proc.communicate(input=inputs, timeout=120)
         
-        result = subprocess.run(
-            ['python3', '-c', script],
-            capture_output=True,
-            text=True,
-            timeout=180
-        )
+        output = stdout.decode() + stderr.decode()
         
-        output = result.stdout + result.stderr
-        
-        if result.returncode != 0:
+        if proc.returncode != 0:
             if 'bad decrypt' in output.lower() or 'wrong pass' in output.lower():
                 return jsonify({'success': False, 'error': 'Contraseña incorrecta'})
-            if 'unable to find' in output.lower() or 'no such file' in output.lower():
+            if 'unable to find' in output.lower() or 'not found' in output.lower():
                 return jsonify({'success': False, 'error': f'Cliente "{name}" no encontrado'})
-            # Si falla pexpect, intentar método alternativo
-            return try_revoke_alternative(name, password)
+            return jsonify({'success': False, 'error': output[:300]})
         
         # Eliminar archivo .ovpn
         ovpn_file = f'{CLIENTS_DIR}/{name}.ovpn'
@@ -472,33 +447,6 @@ sys.exit(child.exitstatus or 0)
         
     except subprocess.TimeoutExpired:
         return jsonify({'success': False, 'error': 'Timeout - operación tardó demasiado'})
-    except Exception as e:
-        # Si falla, intentar método alternativo
-        return try_revoke_alternative(name, password)
-
-def try_revoke_alternative(name, password):
-    """Método alternativo sin pexpect"""
-    try:
-        # Intentar con múltiples passwords en stdin
-        cmd = f'docker run -v {VOLUME_NAME}:/etc/openvpn --rm -i kylemanna/openvpn ovpn_revokeclient {name} remove'
-        proc = subprocess.Popen(cmd, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        # Enviar password, yes, y password de nuevo para CRL
-        inputs = f'{password}\nyes\n{password}\n'.encode()
-        stdout, stderr = proc.communicate(input=inputs, timeout=120)
-        
-        output = stdout.decode() + stderr.decode()
-        
-        if proc.returncode != 0:
-            if 'bad decrypt' in output.lower():
-                return jsonify({'success': False, 'error': 'Contraseña incorrecta'})
-            return jsonify({'success': False, 'error': output[:300]})
-        
-        # Eliminar archivo .ovpn
-        ovpn_file = f'{CLIENTS_DIR}/{name}.ovpn'
-        if os.path.exists(ovpn_file):
-            os.remove(ovpn_file)
-        
-        return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
