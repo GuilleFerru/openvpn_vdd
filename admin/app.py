@@ -15,9 +15,11 @@ CCD_DIR = "/app/ccd"
 CLIENTS_DB = "/app/clients/clients.json"
 ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin123')  # Cambiar en docker-compose
 
-# Rango de IPs para gateways: 10.8.0.100 - 10.8.0.254
+# Subred VPN (ajustar según tu servidor)
+VPN_SUBNET = "192.168.255"  # Tu servidor usa 192.168.255.0/24
+# Rango de IPs para gateways: 192.168.255.100 - 192.168.255.200
 GATEWAY_IP_START = 100
-GATEWAY_IP_END = 254
+GATEWAY_IP_END = 200
 
 def load_clients_db():
     """Cargar base de datos de clientes"""
@@ -449,13 +451,17 @@ def create_client():
             ip_last_octet = get_next_gateway_ip()
             if ip_last_octet is None:
                 return jsonify({'success': False, 'error': 'No hay IPs disponibles para gateways'})
-            assigned_ip = f'10.8.0.{ip_last_octet}'
+            assigned_ip = f'{VPN_SUBNET}.{ip_last_octet}'
             
             # Crear archivo CCD con IP fija
+            # Para topology net30, necesitamos pares de IPs
+            # Cliente: x.x.x.N, Peer: x.x.x.N-1 (donde N es par o impar según el caso)
             os.makedirs(CCD_DIR, exist_ok=True)
             with open(f'{CCD_DIR}/{name}', 'w') as f:
-                # ifconfig-push <IP cliente> <IP servidor>
-                f.write(f'ifconfig-push {assigned_ip} 10.8.0.1\n')
+                # ifconfig-push <IP cliente> <IP peer>
+                # Para net30, usamos IP e IP-1 como peer
+                peer_octet = ip_last_octet - 1 if ip_last_octet % 2 == 0 else ip_last_octet + 1
+                f.write(f'ifconfig-push {assigned_ip} {VPN_SUBNET}.{peer_octet}\n')
         
         # Crear certificado del cliente
         cmd_create = f'docker run -v {VOLUME_NAME}:/etc/openvpn --rm -i kylemanna/openvpn easyrsa build-client-full {name} nopass'

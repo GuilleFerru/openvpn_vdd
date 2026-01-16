@@ -17,12 +17,14 @@ else
     echo "✅ CCD habilitado en openvpn.conf"
 fi
 
-# Crear directorio ccd si no existe
-docker run -v $VOLUME_NAME:/etc/openvpn --rm kylemanna/openvpn mkdir -p /etc/openvpn/ccd
+# Crear directorio ccd local si no existe
+mkdir -p ./ccd
 
 echo ""
 echo "Reiniciando OpenVPN..."
 docker compose restart openvpn
 
 echo ""
-echo "✅ Listo! Los gateways ahora recibirán IPs fijas en el rango 10.8.0.100-254"
+echo "✅ Listo! Los gateways ahora recibirán IPs fijas en el rango 192.168.255.100-200"
+echo ""
+echo "NOTA: Tu servidor usa la subred 192.168.255.0/24"

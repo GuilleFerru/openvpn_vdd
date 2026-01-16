@@ -10,9 +10,9 @@ services:
     volumes:
       - openvpn_openvpn_data:/etc/openvpn
       - ./ccd:/etc/openvpn/ccd
-    # Bloquear tráfico entre gateways (IPs 10.8.0.100-254)
+    # Bloquear tráfico entre gateways (IPs 192.168.255.100-200)
     command: >
-      sh -c "iptables -A FORWARD -s 10.8.0.100/25 -d 10.8.0.100/25 -j DROP && 
+      sh -c "iptables -A FORWARD -s 192.168.255.100/26 -d 192.168.255.100/26 -j DROP && 
              ovpn_run"
 
   openvpn-admin:
@@ -25,6 +25,7 @@ services:
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-SecurePassword123}  # Cambiar por una contraseña segura
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      - /usr/bin/docker:/usr/bin/docker:ro
       - ./clients:/app/clients
       - ./ccd:/app/ccd
     depends_on:

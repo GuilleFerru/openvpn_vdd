@@ -5,7 +5,7 @@ RUN pip install flask
 WORKDIR /app
 COPY app.py .
 
-# Instalar Docker CLI para ejecutar comandos
-RUN apt-get update && apt-get install -y docker.io && rm -rf /var/lib/apt/lists/*
+# Docker CLI se monta desde el host via docker-compose
+# No necesitamos instalarlo aquí
 
 CMD ["python", "app.py"]
