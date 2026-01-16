@@ -57,6 +57,9 @@ HTML_TEMPLATE = '''
 <html>
 <head>
     <title>OpenVPN Admin</title>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <style>
         body { font-family: Arial, sans-serif; max-width: 900px; margin: 50px auto; padding: 20px; background: #1a1a2e; color: #eee; }
         h1 { color: #00d4ff; }
@@ -93,7 +96,7 @@ HTML_TEMPLATE = '''
     
     <div class="card">
         <h2>📡 Clientes Conectados</h2>
-        <button onclick="loadConnected()">🔄 Actualizar</button>
+        <button id="btnRefreshConnected" onclick="loadConnected()">🔄 Actualizar</button>
         <table>
             <thead><tr><th>Cliente</th><th>IP VPN</th><th>IP Real</th><th>Conectado desde</th><th>Tráfico</th></tr></thead>
             <tbody id="connectedList"><tr><td colspan="5">Cargando...</td></tr></tbody>
@@ -112,7 +115,7 @@ HTML_TEMPLATE = '''
     
     <div class="card">
         <h2>📁 Clientes existentes</h2>
-        <button onclick="loadClients()">🔄 Actualizar lista</button>
+        <button id="btnRefreshClients" onclick="loadClients()">🔄 Actualizar lista</button>
         <table>
             <thead><tr><th>Nombre</th><th>Estado</th><th>Acciones</th></tr></thead>
             <tbody id="clientList"></tbody>
@@ -228,6 +231,11 @@ HTML_TEMPLATE = '''
         };
         
         async function loadClients() {
+            const btn = document.getElementById('btnRefreshClients');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '⏳ Cargando...';
+            btn.disabled = true;
+            
             const response = await fetch('/api/clients');
             const data = await response.json();
             const tbody = document.getElementById('clientList');
@@ -238,9 +246,17 @@ HTML_TEMPLATE = '''
                     : '<span class="badge badge-offline">○ Offline</span>';
                 return '<tr><td>' + c + '</td><td>' + badge + '</td><td><a href="/download/' + c + '" style="color:#00d4ff">📥 Descargar</a></td></tr>';
             }).join('');
+            
+            btn.innerHTML = originalText;
+            btn.disabled = false;
         }
         
         async function loadConnected() {
+            const btn = document.getElementById('btnRefreshConnected');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '⏳ Cargando...';
+            btn.disabled = true;
+            
             const response = await fetch('/api/connected');
             const data = await response.json();
             const tbody = document.getElementById('connectedList');
@@ -253,6 +269,9 @@ HTML_TEMPLATE = '''
                     '<tr><td><strong>' + c.name + '</strong></td><td>' + c.vpn_ip + '</td><td>' + c.real_ip + '</td><td>' + c.connected_since + '</td><td>↓' + c.bytes_recv + ' ↑' + c.bytes_sent + '</td></tr>'
                 ).join('');
             }
+            
+            btn.innerHTML = originalText;
+            btn.disabled = false;
             loadClients();
         }
         
