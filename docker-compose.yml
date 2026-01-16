@@ -10,15 +10,17 @@ services:
     volumes:
       - openvpn_openvpn_data:/etc/openvpn
 
-  filebrowser:
-    image: filebrowser/filebrowser
-    container_name: openvpn-files
+  openvpn-admin:
+    build: ./admin
+    container_name: openvpn-admin
     restart: always
     ports:
-      - "8585:80"
+      - "8080:8080"
     volumes:
-      - ./clients:/srv
-    command: --noauth
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./clients:/app/clients
+    depends_on:
+      - openvpn
 
 volumes:
   openvpn_openvpn_data:
