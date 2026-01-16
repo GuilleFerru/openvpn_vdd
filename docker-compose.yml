@@ -1,21 +1,14 @@
 services:
   openvpn:
-    image: openvpn/openvpn-as
-    container_name: openvpn-as
+    image: kylemanna/openvpn
+    container_name: openvpn
     restart: always
     cap_add:
       - NET_ADMIN
-      - MKNOD
-    devices:
-      - /dev/net/tun:/dev/net/tun
     ports:
-      - "943:943"       # UI Web Admin
-      - "443:443"       # UI Web Cliente + HTTPS VPN
-      - "1194:1194/udp" # OpenVPN UDP
+      - "1194:1194/udp"
     volumes:
-      - openvpn_data:/openvpn
-    environment:
-      - TZ=America/Argentina/Buenos_Aires
+      - openvpn_data:/etc/openvpn
 
 volumes:
   openvpn_data:
