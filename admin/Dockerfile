@@ -1,6 +1,6 @@
 FROM python:3.11-slim
 
-RUN pip install flask
+RUN pip install flask pexpect
 
 WORKDIR /app
 COPY app.py .
