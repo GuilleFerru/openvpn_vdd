@@ -13,34 +13,68 @@ VOLUME_NAME = "openvpn_openvpn_data"
 CLIENTS_DIR = "/app/clients"
 CCD_DIR = "/app/ccd"
 CLIENTS_DB = "/app/clients/clients.json"
-ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin123')  # Cambiar en docker-compose
+ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin123')
 
-# Subred VPN (ajustar según tu servidor)
-VPN_SUBNET = "192.168.255"  # Tu servidor usa 192.168.255.0/24
-# Rango de IPs para gateways: 192.168.255.100 - 192.168.255.200
-GATEWAY_IP_START = 100
-GATEWAY_IP_END = 200
+VPN_SUBNET = "192.168.255"
+
+# Configuracion de rangos
+ADMIN_RANGE = {'start': 4, 'end': 13}  # 10 IPs para admins
+GROUP_SIZE = 20  # Cada grupo tiene 20 IPs
+FIRST_GROUP_START = 20  # Primer grupo empieza en .20
+MAX_GROUP_END = 239  # Ultimo octet disponible
 
 def load_clients_db():
-    """Cargar base de datos de clientes"""
     if os.path.exists(CLIENTS_DB):
         with open(CLIENTS_DB, 'r') as f:
-            return json.load(f)
-    return {'clients': {}, 'next_gateway_ip': GATEWAY_IP_START}
+            data = json.load(f)
+            if 'groups' not in data:
+                data = {
+                    'groups': {
+                        'admin': {
+                            'name': 'Administradores',
+                            'icon': '👑',
+                            'range_start': ADMIN_RANGE['start'],
+                            'range_end': ADMIN_RANGE['end'],
+                            'next_ip': ADMIN_RANGE['start'],
+                            'can_see_all': True,
+                            'is_system': True
+                        }
+                    },
+                    'clients': data.get('clients', {}),
+                    'next_group_start': FIRST_GROUP_START
+                }
+                save_clients_db(data)
+            return data
+    return {
+        'groups': {
+            'admin': {
+                'name': 'Administradores',
+                'icon': '👑',
+                'range_start': ADMIN_RANGE['start'],
+                'range_end': ADMIN_RANGE['end'],
+                'next_ip': ADMIN_RANGE['start'],
+                'can_see_all': True,
+                'is_system': True
+            }
+        },
+        'clients': {},
+        'next_group_start': FIRST_GROUP_START
+    }
 
 def save_clients_db(db):
-    """Guardar base de datos de clientes"""
     os.makedirs(os.path.dirname(CLIENTS_DB), exist_ok=True)
     with open(CLIENTS_DB, 'w') as f:
-        json.dump(db, f, indent=2)
+        json.dump(db, f, indent=2, ensure_ascii=False)
 
-def get_next_gateway_ip():
-    """Obtener siguiente IP disponible para gateway"""
+def get_next_ip_for_group(group_id):
     db = load_clients_db()
-    ip = db.get('next_gateway_ip', GATEWAY_IP_START)
-    if ip > GATEWAY_IP_END:
-        return None  # Sin IPs disponibles
-    db['next_gateway_ip'] = ip + 1
+    group = db['groups'].get(group_id)
+    if not group:
+        return None
+    ip = group.get('next_ip', group['range_start'])
+    if ip > group['range_end']:
+        return None
+    db['groups'][group_id]['next_ip'] = ip + 1
     save_clients_db(db)
     return ip
 
@@ -57,15 +91,18 @@ LOGIN_TEMPLATE = '''
 <html>
 <head>
     <title>OpenVPN Admin - Login</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
-        body { font-family: Arial, sans-serif; background: #1a1a2e; color: #eee; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-        .login-box { background: #16213e; padding: 40px; border-radius: 15px; width: 300px; text-align: center; }
-        h1 { color: #00d4ff; margin-bottom: 30px; }
-        input { padding: 12px; margin: 10px 0; border-radius: 5px; border: none; width: 100%; box-sizing: border-box; background: #0f3460; color: #fff; }
-        button { padding: 12px; margin-top: 20px; border-radius: 5px; border: none; width: 100%; background: #00d4ff; color: #1a1a2e; cursor: pointer; font-weight: bold; font-size: 16px; }
-        button:hover { background: #00a8cc; }
+        * { box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Arial, sans-serif; background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); color: #eee; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+        .login-box { background: rgba(22, 33, 62, 0.95); padding: 40px; border-radius: 20px; width: 320px; text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
+        h1 { color: #00d4ff; margin-bottom: 30px; font-size: 24px; }
+        input { padding: 14px; margin: 10px 0; border-radius: 8px; border: 2px solid transparent; width: 100%; background: #0f3460; color: #fff; font-size: 16px; transition: border 0.3s; }
+        input:focus { outline: none; border-color: #00d4ff; }
+        button { padding: 14px; margin-top: 20px; border-radius: 8px; border: none; width: 100%; background: linear-gradient(135deg, #00d4ff, #00a8cc); color: #1a1a2e; cursor: pointer; font-weight: bold; font-size: 16px; transition: transform 0.2s; }
+        button:hover { transform: translateY(-2px); }
         .error { color: #e94560; margin-top: 15px; }
-        .icon { font-size: 60px; margin-bottom: 10px; }
+        .icon { font-size: 70px; margin-bottom: 15px; }
     </style>
 </head>
 <body>
@@ -76,9 +113,7 @@ LOGIN_TEMPLATE = '''
             <input type="password" name="password" placeholder="Contraseña" required autofocus>
             <button type="submit">Ingresar</button>
         </form>
-        {% if error %}
-        <p class="error">{{ error }}</p>
-        {% endif %}
+        {% if error %}<p class="error">{{ error }}</p>{% endif %}
     </div>
 </body>
 </html>
@@ -89,139 +124,287 @@ HTML_TEMPLATE = '''
 <html>
 <head>
     <title>OpenVPN Admin</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-    <meta http-equiv="Pragma" content="no-cache">
-    <meta http-equiv="Expires" content="0">
     <style>
-        body { font-family: Arial, sans-serif; max-width: 900px; margin: 50px auto; padding: 20px; background: #1a1a2e; color: #eee; }
-        h1 { color: #00d4ff; }
-        h2 { color: #4ecca3; margin-top: 0; }
-        .card { background: #16213e; padding: 20px; border-radius: 10px; margin: 20px 0; }
-        input, button { padding: 10px; margin: 5px 0; border-radius: 5px; border: none; width: 100%; box-sizing: border-box; }
-        input { background: #0f3460; color: #fff; }
-        button { background: #00d4ff; color: #1a1a2e; cursor: pointer; font-weight: bold; }
-        button:hover { background: #00a8cc; }
-        .btn-danger { background: #e94560; color: #fff; }
-        .btn-danger:hover { background: #c73e54; }
-        .btn-small { width: auto; padding: 5px 10px; font-size: 12px; }
-        .success { color: #4ecca3; }
-        .error { color: #e94560; }
-        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-        th, td { padding: 10px; text-align: left; border-bottom: 1px solid #0f3460; }
-        .status { display: none; padding: 10px; border-radius: 5px; margin-top: 10px; }
-        .loading { color: #ffd700; }
-        .online { color: #4ecca3; }
-        .offline { color: #888; }
-        .badge { display: inline-block; padding: 3px 8px; border-radius: 3px; font-size: 11px; }
+        * { box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Arial, sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); min-height: 100vh; color: #eee; }
+        h1 { color: #00d4ff; margin: 0; }
+        h2 { color: #4ecca3; margin: 0 0 15px 0; font-size: 18px; }
+        h3 { color: #ffd700; margin: 20px 0 10px 0; font-size: 16px; }
+        
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; padding-bottom: 20px; border-bottom: 1px solid #0f3460; }
+        .btn-logout { background: #444; color: #fff; padding: 10px 18px; border-radius: 8px; text-decoration: none; font-size: 14px; transition: background 0.3s; }
+        .btn-logout:hover { background: #555; }
+        
+        .card { background: rgba(22, 33, 62, 0.8); padding: 20px; border-radius: 15px; margin: 20px 0; box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
+        
+        input, button, select { padding: 12px; margin: 5px 0; border-radius: 8px; border: none; width: 100%; font-size: 14px; }
+        input, select { background: #0f3460; color: #fff; border: 2px solid transparent; transition: border 0.3s; }
+        input:focus, select:focus { outline: none; border-color: #00d4ff; }
+        select { cursor: pointer; }
+        
+        button { background: linear-gradient(135deg, #00d4ff, #00a8cc); color: #1a1a2e; cursor: pointer; font-weight: bold; transition: transform 0.2s, opacity 0.2s; }
+        button:hover:not(:disabled) { transform: translateY(-1px); }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        
+        .btn-danger { background: linear-gradient(135deg, #e94560, #c73e54); color: #fff; }
+        .btn-secondary { background: #444; color: #fff; }
+        .btn-small { width: auto; padding: 8px 16px; font-size: 13px; display: inline-block; margin: 3px; }
+        
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #0f3460; }
+        th { color: #888; font-weight: normal; font-size: 13px; }
+        
+        .status { display: none; padding: 12px; border-radius: 8px; margin-top: 12px; }
+        .loading { background: rgba(255,215,0,0.1); color: #ffd700; }
+        .success { background: rgba(78,204,163,0.1); color: #4ecca3; }
+        .error { background: rgba(233,69,96,0.1); color: #e94560; }
+        
+        .badge { display: inline-block; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: bold; }
         .badge-online { background: #4ecca3; color: #1a1a2e; }
-        .badge-offline { background: #444; color: #888; }
-        .header { display: flex; justify-content: space-between; align-items: center; }
-        .btn-logout { background: #444; color: #fff; width: auto; padding: 8px 15px; font-size: 13px; }
-        .btn-logout:hover { background: #666; }
+        .badge-offline { background: #333; color: #666; }
+        .badge-admin { background: linear-gradient(135deg, #ffd700, #ffaa00); color: #1a1a2e; }
+        .badge-group { background: #0f3460; color: #4ecca3; }
+        
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+        
+        .group-card { background: linear-gradient(135deg, #0f3460, #0a2847); padding: 18px; border-radius: 12px; margin: 12px 0; border-left: 4px solid #4ecca3; transition: transform 0.2s; }
+        .group-card:hover { transform: translateX(5px); }
+        .group-card.admin { border-left-color: #ffd700; }
+        .group-header { display: flex; justify-content: space-between; align-items: center; }
+        .group-icon { font-size: 28px; margin-right: 12px; }
+        .group-name { font-weight: bold; font-size: 16px; }
+        .group-stats { color: #888; font-size: 12px; margin-top: 5px; }
+        .group-range { font-family: monospace; color: #666; font-size: 11px; }
+        
+        .client-row { background: #0f3460; margin: 6px 0; padding: 10px 15px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; transition: background 0.2s; }
+        .client-row:hover { background: #153560; }
+        .client-name { font-weight: 500; }
+        .client-ip { font-family: monospace; color: #888; font-size: 12px; margin-left: 10px; }
+        
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); justify-content: center; align-items: center; z-index: 1000; }
+        .modal-content { background: #16213e; padding: 30px; border-radius: 20px; width: 420px; max-width: 95%; max-height: 90vh; overflow-y: auto; }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #0f3460; }
+        .modal-header h2 { margin: 0; }
+        .modal-close { background: none; border: none; color: #888; font-size: 28px; cursor: pointer; width: auto; padding: 0; }
+        .modal-close:hover { color: #fff; }
+        
+        .icon-picker { display: flex; gap: 8px; flex-wrap: wrap; margin: 15px 0; }
+        .icon-option { padding: 12px; cursor: pointer; border-radius: 10px; font-size: 24px; transition: all 0.2s; background: #0f3460; }
+        .icon-option:hover { background: #1a4a7a; transform: scale(1.1); }
+        .icon-option.selected { background: #00d4ff; transform: scale(1.1); }
+        
+        .empty-state { text-align: center; padding: 40px; color: #666; }
+        .empty-state .icon { font-size: 50px; margin-bottom: 15px; }
+        
+        .info-text { color: #888; font-size: 13px; margin: 10px 0; }
+        .range-preview { font-family: monospace; background: #0f3460; padding: 10px 15px; border-radius: 8px; margin: 10px 0; color: #4ecca3; }
     </style>
 </head>
 <body>
     <div class="header">
         <h1>🔐 OpenVPN Admin</h1>
-        <a href="/logout"><button class="btn-logout">🚪 Cerrar sesión</button></a>
+        <a href="/logout" class="btn-logout">🚪 Cerrar sesión</a>
     </div>
-    
+
     <div class="card">
-        <h2>📡 Clientes Conectados</h2>
-        <button id="btnRefreshConnected" onclick="loadConnected()">🔄 Actualizar</button>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+            <h2>📡 Clientes Conectados</h2>
+            <button class="btn-small btn-secondary" id="btnRefreshConnected" onclick="loadConnected()">🔄</button>
+        </div>
         <table>
-            <thead><tr><th>Cliente</th><th>IP VPN</th><th>IP Real</th><th>Conectado desde</th><th>Tráfico</th></tr></thead>
-            <tbody id="connectedList"><tr><td colspan="5">Cargando...</td></tr></tbody>
+            <thead><tr><th>Cliente</th><th>Grupo</th><th>IP VPN</th><th>IP Real</th><th>Conectado</th><th>Tráfico</th></tr></thead>
+            <tbody id="connectedList"><tr><td colspan="6" style="color:#666">Cargando...</td></tr></tbody>
         </table>
     </div>
-    
-    <div class="card">
-        <h2>➕ Crear nuevo cliente</h2>
-        <form id="createForm">
-            <input type="text" id="clientName" placeholder="Nombre del cliente (ej: gateway-01)" required>
-            <select id="clientType" style="background:#0f3460;color:#fff;padding:10px;border-radius:5px;width:100%;margin:5px 0;">
-                <option value="user">👤 Usuario (puede acceder a gateways)</option>
-                <option value="gateway">📡 Gateway (aislado de otros gateways)</option>
-            </select>
-            <input type="password" id="caPassword" placeholder="Contraseña de la CA" required>
-            <button type="submit">Crear Cliente</button>
-        </form>
-        <div id="createStatus" class="status"></div>
+
+    <div class="grid">
+        <div>
+            <div class="card">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <h2>📁 Grupos</h2>
+                    <button class="btn-small" onclick="showCreateGroupModal()">+ Nuevo Grupo</button>
+                </div>
+                <div id="groupsList"></div>
+            </div>
+        </div>
+        <div>
+            <div class="card">
+                <h2>➕ Crear Cliente</h2>
+                <p class="info-text">Los clientes del mismo grupo pueden verse entre sí. Admins ven todo.</p>
+                <form id="createForm">
+                    <input type="text" id="clientName" placeholder="Nombre (ej: gw-oficina, tecnico-juan)" required>
+                    <select id="clientGroup" required>
+                        <option value="">-- Seleccionar grupo --</option>
+                    </select>
+                    <input type="password" id="caPassword" placeholder="Contraseña de la CA" required>
+                    <button type="submit">Crear Cliente</button>
+                </form>
+                <div id="createStatus" class="status"></div>
+            </div>
+
+            <div class="card">
+                <h2>⚠️ Revocar Cliente</h2>
+                <form id="revokeForm">
+                    <input type="text" id="revokeClientName" placeholder="Nombre del cliente" required>
+                    <input type="password" id="revokePassword" placeholder="Contraseña de la CA" required>
+                    <button type="submit" class="btn-danger">Revocar</button>
+                </form>
+                <div id="revokeStatus" class="status"></div>
+            </div>
+        </div>
     </div>
-    
+
     <div class="card">
-        <h2>📁 Clientes existentes</h2>
-        <button id="btnRefreshClients" onclick="loadClients()">🔄 Actualizar lista</button>
-        <table>
-            <thead><tr><th>Nombre</th><th>Estado</th><th>Acciones</th></tr></thead>
-            <tbody id="clientList"></tbody>
-        </table>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+            <h2>📋 Clientes por Grupo</h2>
+            <button class="btn-small btn-secondary" id="btnRefreshClients" onclick="loadClients()">🔄</button>
+        </div>
+        <div id="clientsByGroup"></div>
     </div>
-    
-    <div class="card">
-        <h2>⚠️ Revocar cliente</h2>
-        <form id="revokeForm">
-            <input type="text" id="revokeClientName" placeholder="Nombre del cliente a revocar" required>
-            <input type="password" id="revokePassword" placeholder="Contraseña de la CA" required>
-            <button type="submit" class="btn-danger">Revocar Cliente</button>
-        </form>
-        <div id="revokeStatus" class="status"></div>
-    </div>
-    
-    <div class="card">
-        <h2>🗑️ Eliminar archivo .ovpn</h2>
-        <p style="color:#888;font-size:12px;">Elimina archivos huérfanos sin revocar el certificado</p>
-        <form id="deleteForm">
-            <input type="text" id="deleteClientName" placeholder="Nombre del cliente" required>
-            <button type="submit" class="btn-danger">Eliminar archivo</button>
-        </form>
-        <div id="deleteStatus" class="status"></div>
+
+    <!-- Modal Crear Grupo -->
+    <div id="modalCreateGroup" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>➕ Nuevo Grupo</h2>
+                <button class="modal-close" onclick="hideModal('modalCreateGroup')">&times;</button>
+            </div>
+            <form id="createGroupForm">
+                <label class="info-text">Nombre del grupo:</label>
+                <input type="text" id="groupName" placeholder="Ej: Empresa ABC, Fábrica Norte" required>
+                
+                <label class="info-text">Icono:</label>
+                <div class="icon-picker" id="iconPicker">
+                    <span class="icon-option selected" data-icon="🏢">🏢</span>
+                    <span class="icon-option" data-icon="🏭">🏭</span>
+                    <span class="icon-option" data-icon="🏬">🏬</span>
+                    <span class="icon-option" data-icon="🏪">🏪</span>
+                    <span class="icon-option" data-icon="🏥">🏥</span>
+                    <span class="icon-option" data-icon="🏫">🏫</span>
+                    <span class="icon-option" data-icon="🏨">🏨</span>
+                    <span class="icon-option" data-icon="🏦">🏦</span>
+                    <span class="icon-option" data-icon="⚡">⚡</span>
+                    <span class="icon-option" data-icon="🌐">🌐</span>
+                    <span class="icon-option" data-icon="🔧">🔧</span>
+                    <span class="icon-option" data-icon="📡">📡</span>
+                </div>
+                
+                <label class="info-text">Rango de IPs asignado:</label>
+                <div class="range-preview" id="groupRangePreview">Cargando...</div>
+                <p class="info-text">Cada grupo puede tener hasta 20 clientes.</p>
+                
+                <button type="submit">Crear Grupo</button>
+            </form>
+        </div>
     </div>
 
     <script>
+        let groups = {};
         let connectedClients = [];
-        
+        let selectedIcon = '🏢';
+
+        document.querySelectorAll('.icon-option').forEach(opt => {
+            opt.onclick = () => {
+                document.querySelectorAll('.icon-option').forEach(o => o.classList.remove('selected'));
+                opt.classList.add('selected');
+                selectedIcon = opt.dataset.icon;
+            };
+        });
+
+        function showModal(id) { document.getElementById(id).style.display = 'flex'; }
+        function hideModal(id) { document.getElementById(id).style.display = 'none'; }
+
+        async function showCreateGroupModal() {
+            showModal('modalCreateGroup');
+            const r = await fetch('/api/next-group-range');
+            const d = await r.json();
+            if (d.available) {
+                document.getElementById('groupRangePreview').textContent = 
+                    `192.168.255.${d.start} - 192.168.255.${d.end}`;
+            } else {
+                document.getElementById('groupRangePreview').textContent = '❌ No hay más rangos disponibles';
+            }
+        }
+
+        document.getElementById('createGroupForm').onsubmit = async (e) => {
+            e.preventDefault();
+            const btn = e.target.querySelector('button');
+            btn.disabled = true;
+            btn.textContent = 'Creando...';
+            
+            const r = await fetch('/api/groups', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    name: document.getElementById('groupName').value,
+                    icon: selectedIcon
+                })
+            });
+            const d = await r.json();
+            
+            btn.disabled = false;
+            btn.textContent = 'Crear Grupo';
+            
+            if (d.success) {
+                hideModal('modalCreateGroup');
+                document.getElementById('groupName').value = '';
+                loadGroups();
+            } else {
+                alert('Error: ' + d.error);
+            }
+        };
+
         document.getElementById('createForm').onsubmit = async (e) => {
             e.preventDefault();
             const status = document.getElementById('createStatus');
+            const btn = e.target.querySelector('button[type="submit"]');
+            
             status.style.display = 'block';
             status.className = 'status loading';
-            status.textContent = 'Creando cliente... (esto puede tardar unos segundos)';
+            status.textContent = '⏳ Creando cliente...';
+            btn.disabled = true;
             
-            const response = await fetch('/api/create', {
+            const r = await fetch('/api/create', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
                     name: document.getElementById('clientName').value,
                     password: document.getElementById('caPassword').value,
-                    type: document.getElementById('clientType').value
+                    group: document.getElementById('clientGroup').value
                 })
             });
-            const data = await response.json();
+            const d = await r.json();
             
-            if (data.success) {
+            btn.disabled = false;
+            
+            if (d.success) {
                 status.className = 'status success';
-                const typeLabel = data.type === 'gateway' ? '📡 Gateway' : '👤 Usuario';
-                const ipInfo = data.ip ? ' (IP: ' + data.ip + ')' : '';
-                status.innerHTML = '✅ ' + typeLabel + ' creado!' + ipInfo + ' <a href="/download/' + data.name + '" style="color:#00d4ff">Descargar ' + data.name + '.ovpn</a>';
+                status.innerHTML = `✅ Cliente creado! IP: <strong>${d.ip}</strong> &nbsp; <a href="/download/${d.name}" style="color:#00d4ff;font-weight:bold;">📥 Descargar .ovpn</a>`;
                 document.getElementById('clientName').value = '';
                 loadClients();
+                loadGroups();
             } else {
                 status.className = 'status error';
-                status.textContent = '❌ Error: ' + data.error;
+                status.textContent = '❌ ' + d.error;
             }
         };
-        
+
         document.getElementById('revokeForm').onsubmit = async (e) => {
             e.preventDefault();
-            if (!confirm('¿Seguro que querés revocar este cliente? Esta acción es IRREVERSIBLE.')) return;
+            if (!confirm('¿Revocar este cliente? Esta acción es IRREVERSIBLE.')) return;
             
             const status = document.getElementById('revokeStatus');
+            const btn = e.target.querySelector('button[type="submit"]');
+            
             status.style.display = 'block';
             status.className = 'status loading';
-            status.textContent = 'Revocando cliente...';
+            status.textContent = '⏳ Revocando...';
+            btn.disabled = true;
             
-            const response = await fetch('/api/revoke', {
+            const r = await fetch('/api/revoke', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
@@ -229,95 +412,167 @@ HTML_TEMPLATE = '''
                     password: document.getElementById('revokePassword').value
                 })
             });
-            const data = await response.json();
+            const d = await r.json();
             
-            if (data.success) {
+            btn.disabled = false;
+            
+            if (d.success) {
                 status.className = 'status success';
                 status.textContent = '✅ Cliente revocado correctamente';
                 document.getElementById('revokeClientName').value = '';
                 loadClients();
+                loadGroups();
             } else {
                 status.className = 'status error';
-                status.textContent = '❌ Error: ' + data.error;
+                status.textContent = '❌ ' + d.error;
             }
         };
-        
-        document.getElementById('deleteForm').onsubmit = async (e) => {
-            e.preventDefault();
-            if (!confirm('¿Eliminar este archivo .ovpn?')) return;
+
+        async function loadGroups() {
+            const r = await fetch('/api/groups');
+            const d = await r.json();
+            groups = d.groups;
             
-            const status = document.getElementById('deleteStatus');
-            status.style.display = 'block';
+            const container = document.getElementById('groupsList');
+            const select = document.getElementById('clientGroup');
             
-            const response = await fetch('/api/delete', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    name: document.getElementById('deleteClientName').value
-                })
+            const sortedGroups = Object.entries(groups).sort((a, b) => {
+                if (a[1].is_system) return -1;
+                if (b[1].is_system) return 1;
+                return a[1].name.localeCompare(b[1].name);
             });
-            const data = await response.json();
             
-            if (data.success) {
-                status.className = 'status success';
-                status.textContent = '✅ Archivo eliminado';
-                document.getElementById('deleteClientName').value = '';
-                loadClients();
+            if (sortedGroups.length === 0) {
+                container.innerHTML = '<div class="empty-state"><div class="icon">📁</div><p>No hay grupos creados</p></div>';
             } else {
-                status.className = 'status error';
-                status.textContent = '❌ Error: ' + data.error;
+                let html = '';
+                for (const [id, g] of sortedGroups) {
+                    const used = (g.next_ip || g.range_start) - g.range_start;
+                    const total = g.range_end - g.range_start + 1;
+                    const isAdmin = g.is_system || g.can_see_all;
+                    
+                    html += `
+                        <div class="group-card ${isAdmin ? 'admin' : ''}">
+                            <div class="group-header">
+                                <div>
+                                    <span class="group-icon">${g.icon}</span>
+                                    <span class="group-name">${g.name}</span>
+                                    ${isAdmin ? '<span class="badge badge-admin" style="margin-left:10px;">VE TODO</span>' : ''}
+                                </div>
+                                <div style="text-align:right;">
+                                    <div><strong>${used}</strong> / ${total}</div>
+                                    <div class="group-range">.${g.range_start} - .${g.range_end}</div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }
+                container.innerHTML = html;
             }
-        };
-        
+            
+            select.innerHTML = '<option value="">-- Seleccionar grupo --</option>';
+            for (const [id, g] of sortedGroups) {
+                const used = (g.next_ip || g.range_start) - g.range_start;
+                const total = g.range_end - g.range_start + 1;
+                const full = used >= total;
+                select.innerHTML += `<option value="${id}" ${full ? 'disabled' : ''}>${g.icon} ${g.name} (${used}/${total})${full ? ' - LLENO' : ''}</option>`;
+            }
+        }
+
         async function loadClients() {
             const btn = document.getElementById('btnRefreshClients');
-            const originalText = btn.innerHTML;
-            btn.innerHTML = '⏳ Cargando...';
+            btn.innerHTML = '⏳';
             btn.disabled = true;
             
-            const response = await fetch('/api/clients');
-            const data = await response.json();
-            const tbody = document.getElementById('clientList');
-            tbody.innerHTML = data.clients.map(c => {
-                const isOnline = connectedClients.includes(c.name);
-                const statusBadge = isOnline 
-                    ? '<span class="badge badge-online">● Online</span>' 
-                    : '<span class="badge badge-offline">○ Offline</span>';
-                const typeIcon = c.type === 'gateway' ? '📡' : '👤';
-                const ipInfo = c.ip ? ' <small style="color:#888">(' + c.ip + ')</small>' : '';
-                return '<tr><td>' + typeIcon + ' ' + c.name + ipInfo + '</td><td>' + statusBadge + '</td><td><a href="/download/' + c.name + '" style="color:#00d4ff">📥 Descargar</a></td></tr>';
-            }).join('');
+            const r = await fetch('/api/clients');
+            const d = await r.json();
             
-            btn.innerHTML = originalText;
-            btn.disabled = false;
-        }
-        
-        async function loadConnected() {
-            const btn = document.getElementById('btnRefreshConnected');
-            const originalText = btn.innerHTML;
-            btn.innerHTML = '⏳ Cargando...';
-            btn.disabled = true;
-            
-            const response = await fetch('/api/connected');
-            const data = await response.json();
-            const tbody = document.getElementById('connectedList');
-            connectedClients = data.clients.map(c => c.name);
-            
-            if (data.clients.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="5" style="color:#888">No hay clientes conectados</td></tr>';
-            } else {
-                tbody.innerHTML = data.clients.map(c => 
-                    '<tr><td><strong>' + c.name + '</strong></td><td>' + c.vpn_ip + '</td><td>' + c.real_ip + '</td><td>' + c.connected_since + '</td><td>↓' + c.bytes_recv + ' ↑' + c.bytes_sent + '</td></tr>'
-                ).join('');
+            const byGroup = {};
+            for (const c of d.clients) {
+                const gid = c.group || 'sin-grupo';
+                if (!byGroup[gid]) byGroup[gid] = [];
+                byGroup[gid].push(c);
             }
             
-            btn.innerHTML = originalText;
+            const sortedGroups = Object.entries(groups).sort((a, b) => {
+                if (a[1].is_system) return -1;
+                if (b[1].is_system) return 1;
+                return a[1].name.localeCompare(b[1].name);
+            });
+            
+            let html = '';
+            
+            for (const [gid, g] of sortedGroups) {
+                const clients = byGroup[gid] || [];
+                html += `<h3>${g.icon} ${g.name}</h3>`;
+                
+                if (clients.length === 0) {
+                    html += '<p style="color:#555;font-size:13px;margin-left:10px;">Sin clientes</p>';
+                } else {
+                    for (const c of clients) {
+                        const isOnline = connectedClients.includes(c.name);
+                        const badge = isOnline 
+                            ? '<span class="badge badge-online">● Online</span>' 
+                            : '<span class="badge badge-offline">○ Offline</span>';
+                        
+                        html += `
+                            <div class="client-row">
+                                <div>
+                                    <span class="client-name">${c.name}</span>
+                                    <span class="client-ip">${c.ip || 'IP dinámica'}</span>
+                                    ${badge}
+                                </div>
+                                <a href="/download/${c.name}" class="btn-small" style="background:#0f3460;color:#00d4ff;">📥 .ovpn</a>
+                            </div>
+                        `;
+                    }
+                }
+            }
+            
+            document.getElementById('clientsByGroup').innerHTML = html || '<div class="empty-state"><div class="icon">👥</div><p>No hay clientes</p></div>';
+            btn.innerHTML = '🔄';
+            btn.disabled = false;
+        }
+
+        async function loadConnected() {
+            const btn = document.getElementById('btnRefreshConnected');
+            btn.innerHTML = '⏳';
+            btn.disabled = true;
+            
+            const r = await fetch('/api/connected');
+            const d = await r.json();
+            connectedClients = d.clients.map(c => c.name);
+            
+            const tbody = document.getElementById('connectedList');
+            
+            if (d.clients.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="color:#555;text-align:center;">Sin conexiones activas</td></tr>';
+            } else {
+                tbody.innerHTML = d.clients.map(c => {
+                    const grpBadge = c.group_name 
+                        ? `<span class="badge badge-group">${c.group_icon} ${c.group_name}</span>`
+                        : '<span style="color:#666">-</span>';
+                    return `
+                        <tr>
+                            <td><strong>${c.name}</strong></td>
+                            <td>${grpBadge}</td>
+                            <td style="font-family:monospace">${c.vpn_ip}</td>
+                            <td style="font-family:monospace;color:#888">${c.real_ip}</td>
+                            <td style="color:#888;font-size:12px">${c.connected_since}</td>
+                            <td style="font-size:12px">↓${c.bytes_recv} ↑${c.bytes_sent}</td>
+                        </tr>
+                    `;
+                }).join('');
+            }
+            
+            btn.innerHTML = '🔄';
             btn.disabled = false;
             loadClients();
         }
-        
+
+        loadGroups();
         loadConnected();
-        setInterval(loadConnected, 30000); // Auto-refresh cada 30s
+        setInterval(loadConnected, 30000);
     </script>
 </body>
 </html>
@@ -346,87 +601,156 @@ def logout():
 def index():
     return render_template_string(HTML_TEMPLATE)
 
+@app.route('/api/groups', methods=['GET'])
+@login_required
+def get_groups():
+    db = load_clients_db()
+    return jsonify({'groups': db.get('groups', {})})
+
+@app.route('/api/groups', methods=['POST'])
+@login_required
+def create_group():
+    data = request.json
+    name = data.get('name', '').strip()
+    icon = data.get('icon', '🏢')
+    
+    if not name:
+        return jsonify({'success': False, 'error': 'Nombre requerido'})
+    
+    if len(name) > 50:
+        return jsonify({'success': False, 'error': 'Nombre muy largo (máx 50 caracteres)'})
+    
+    db = load_clients_db()
+    
+    group_id = re.sub(r'[^a-z0-9]', '-', name.lower()).strip('-')
+    group_id = re.sub(r'-+', '-', group_id)
+    if not group_id:
+        group_id = f'grupo-{len(db["groups"])}'
+    
+    if group_id in db['groups']:
+        return jsonify({'success': False, 'error': 'Ya existe un grupo con ese nombre'})
+    
+    next_start = db.get('next_group_start', FIRST_GROUP_START)
+    next_end = next_start + GROUP_SIZE - 1
+    
+    if next_end > MAX_GROUP_END:
+        return jsonify({'success': False, 'error': 'No hay más rangos de IP disponibles'})
+    
+    db['groups'][group_id] = {
+        'name': name,
+        'icon': icon,
+        'range_start': next_start,
+        'range_end': next_end,
+        'next_ip': next_start,
+        'can_see_all': False,
+        'is_system': False
+    }
+    
+    db['next_group_start'] = next_start + GROUP_SIZE
+    save_clients_db(db)
+    
+    return jsonify({'success': True, 'group_id': group_id, 'range_start': next_start, 'range_end': next_end})
+
+@app.route('/api/next-group-range', methods=['GET'])
+@login_required
+def get_next_group_range():
+    db = load_clients_db()
+    next_start = db.get('next_group_start', FIRST_GROUP_START)
+    next_end = next_start + GROUP_SIZE - 1
+    
+    if next_end > MAX_GROUP_END:
+        return jsonify({'available': False})
+    
+    return jsonify({
+        'available': True,
+        'start': next_start,
+        'end': next_end,
+        'capacity': GROUP_SIZE
+    })
+
 @app.route('/api/clients')
 @login_required
 def list_clients():
     clients = []
     db = load_clients_db()
+    
     if os.path.exists(CLIENTS_DIR):
         for f in os.listdir(CLIENTS_DIR):
             if f.endswith('.ovpn'):
                 name = f.replace('.ovpn', '')
-                client_info = db.get('clients', {}).get(name, {})
+                info = db.get('clients', {}).get(name, {})
                 clients.append({
                     'name': name,
-                    'type': client_info.get('type', 'user'),
-                    'ip': client_info.get('ip')
+                    'group': info.get('group'),
+                    'ip': info.get('ip')
                 })
-    return jsonify({'clients': sorted(clients, key=lambda x: x['name'])})
+    
+    return jsonify({'clients': sorted(clients, key=lambda x: (x['group'] or 'zzz', x['name']))})
 
 @app.route('/api/connected')
 @login_required
 def connected_clients():
-    """Lee el status log de OpenVPN para ver clientes conectados"""
     clients = []
+    db = load_clients_db()
+    
     try:
-        cmd = f'docker exec openvpn cat /tmp/openvpn-status.log 2>/dev/null || echo ""'
+        cmd = f'docker run -v {VOLUME_NAME}:/etc/openvpn --rm kylemanna/openvpn cat /tmp/openvpn-status.log 2>/dev/null || echo ""'
         result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=10)
+        lines = result.stdout.strip().split('\n')
         
-        if result.stdout:
-            lines = result.stdout.split('\n')
-            in_client_list = False
-            
-            for line in lines:
-                if line.startswith('Common Name,'):
-                    in_client_list = True
-                    continue
-                if line.startswith('ROUTING TABLE') or line.startswith('Virtual Address'):
-                    in_client_list = False
-                    continue
+        in_client_list = False
+        for line in lines:
+            if line.startswith('Common Name,'):
+                in_client_list = True
+                continue
+            if line.startswith('ROUTING TABLE'):
+                break
+            if in_client_list and ',' in line:
+                parts = line.split(',')
+                if len(parts) >= 4 and parts[0] != 'UNDEF':
+                    name = parts[0]
+                    info = db.get('clients', {}).get(name, {})
+                    gid = info.get('group')
+                    grp = db.get('groups', {}).get(gid, {}) if gid else {}
                     
-                if in_client_list and ',' in line:
-                    parts = line.split(',')
-                    if len(parts) >= 5 and parts[0] != 'UNDEF':
-                        clients.append({
-                            'name': parts[0],
-                            'real_ip': parts[1].split(':')[0] if ':' in parts[1] else parts[1],
-                            'bytes_recv': format_bytes(int(parts[2])) if parts[2].isdigit() else parts[2],
-                            'bytes_sent': format_bytes(int(parts[3])) if parts[3].isdigit() else parts[3],
-                            'connected_since': parts[4] if len(parts) > 4 else 'N/A',
-                            'vpn_ip': ''
-                        })
-            
-            # Obtener IPs VPN de la routing table
-            in_routing = False
-            for line in lines:
-                if line.startswith('Virtual Address,'):
-                    in_routing = True
-                    continue
-                if line.startswith('GLOBAL STATS'):
-                    break
-                    
-                if in_routing and ',' in line:
-                    parts = line.split(',')
-                    if len(parts) >= 2:
-                        vpn_ip = parts[0]
-                        client_name = parts[1]
-                        for c in clients:
-                            if c['name'] == client_name:
-                                c['vpn_ip'] = vpn_ip
-                                break
-                                
+                    clients.append({
+                        'name': name,
+                        'real_ip': parts[1].split(':')[0],
+                        'bytes_recv': format_bytes(int(parts[2])) if parts[2].isdigit() else parts[2],
+                        'bytes_sent': format_bytes(int(parts[3])) if parts[3].isdigit() else parts[3],
+                        'connected_since': parts[4] if len(parts) > 4 else 'N/A',
+                        'vpn_ip': info.get('ip', 'Dinámica'),
+                        'group_name': grp.get('name', ''),
+                        'group_icon': grp.get('icon', '')
+                    })
+        
+        in_routing = False
+        for line in lines:
+            if line.startswith('Virtual Address,'):
+                in_routing = True
+                continue
+            if line.startswith('GLOBAL STATS'):
+                break
+            if in_routing and ',' in line:
+                parts = line.split(',')
+                if len(parts) >= 2:
+                    for c in clients:
+                        if c['name'] == parts[1] and c['vpn_ip'] == 'Dinámica':
+                            c['vpn_ip'] = parts[0]
+                            break
+                            
     except Exception as e:
         print(f"Error getting connected clients: {e}")
     
     return jsonify({'clients': clients})
 
-def format_bytes(bytes_num):
-    if bytes_num < 1024:
-        return f"{bytes_num}B"
-    elif bytes_num < 1024*1024:
-        return f"{bytes_num/1024:.1f}KB"
+def format_bytes(b):
+    if b < 1024:
+        return f"{b}B"
+    elif b < 1024 * 1024:
+        return f"{b/1024:.1f}KB"
     else:
-        return f"{bytes_num/(1024*1024):.1f}MB"
+        return f"{b/(1024*1024):.1f}MB"
 
 @app.route('/api/create', methods=['POST'])
 @login_required
@@ -434,72 +758,75 @@ def create_client():
     data = request.json
     name = data.get('name', '').strip()
     password = data.get('password', '')
-    client_type = data.get('type', 'user')  # 'user' o 'gateway'
+    group_id = data.get('group', '')
     
     if not name or not password:
         return jsonify({'success': False, 'error': 'Nombre y contraseña requeridos'})
     
-    # Validar nombre (solo letras, números, guiones)
-    if not name.replace('-', '').replace('_', '').isalnum():
+    if not group_id:
+        return jsonify({'success': False, 'error': 'Debe seleccionar un grupo'})
+    
+    if not re.match(r'^[a-zA-Z0-9_-]+$', name):
         return jsonify({'success': False, 'error': 'Nombre inválido (solo letras, números, guiones)'})
     
-    assigned_ip = None
+    if len(name) > 64:
+        return jsonify({'success': False, 'error': 'Nombre muy largo (máx 64 caracteres)'})
+    
+    db = load_clients_db()
+    
+    group = db['groups'].get(group_id)
+    if not group:
+        return jsonify({'success': False, 'error': 'Grupo no existe'})
+    
+    ip_octet = get_next_ip_for_group(group_id)
+    if ip_octet is None:
+        return jsonify({'success': False, 'error': 'Grupo lleno, no hay más IPs disponibles'})
+    
+    assigned_ip = f'{VPN_SUBNET}.{ip_octet}'
     
     try:
-        # Si es gateway, asignar IP fija
-        if client_type == 'gateway':
-            ip_last_octet = get_next_gateway_ip()
-            if ip_last_octet is None:
-                return jsonify({'success': False, 'error': 'No hay IPs disponibles para gateways'})
-            assigned_ip = f'{VPN_SUBNET}.{ip_last_octet}'
-            
-            # Crear archivo CCD con IP fija
-            # Para topology net30, necesitamos pares de IPs
-            # Cliente: x.x.x.N, Peer: x.x.x.N-1 (donde N es par o impar según el caso)
-            os.makedirs(CCD_DIR, exist_ok=True)
-            with open(f'{CCD_DIR}/{name}', 'w') as f:
-                # ifconfig-push <IP cliente> <IP peer>
-                # Para net30, usamos IP e IP-1 como peer
-                peer_octet = ip_last_octet - 1 if ip_last_octet % 2 == 0 else ip_last_octet + 1
-                f.write(f'ifconfig-push {assigned_ip} {VPN_SUBNET}.{peer_octet}\n')
+        os.makedirs(CCD_DIR, exist_ok=True)
+        if ip_octet % 2 == 0:
+            peer_octet = ip_octet + 1
+        else:
+            peer_octet = ip_octet - 1
         
-        # Crear certificado del cliente
-        cmd_create = f'docker run -v {VOLUME_NAME}:/etc/openvpn --rm -i kylemanna/openvpn easyrsa build-client-full {name} nopass'
-        proc = subprocess.Popen(cmd_create, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        with open(f'{CCD_DIR}/{name}', 'w') as f:
+            f.write(f'ifconfig-push {assigned_ip} {VPN_SUBNET}.{peer_octet}\n')
+        
+        cmd = f'docker run -v {VOLUME_NAME}:/etc/openvpn --rm -i kylemanna/openvpn easyrsa build-client-full {name} nopass'
+        proc = subprocess.Popen(cmd, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         stdout, stderr = proc.communicate(input=f'{password}\n'.encode(), timeout=120)
         
         if proc.returncode != 0:
-            error_msg = stderr.decode()
-            # Limpiar CCD si falló
-            if client_type == 'gateway' and os.path.exists(f'{CCD_DIR}/{name}'):
+            if os.path.exists(f'{CCD_DIR}/{name}'):
                 os.remove(f'{CCD_DIR}/{name}')
-            if 'password' in error_msg.lower() or 'pass phrase' in error_msg.lower() or 'bad decrypt' in error_msg.lower():
-                return jsonify({'success': False, 'error': 'Contraseña incorrecta'})
-            if 'already exists' in error_msg.lower():
-                return jsonify({'success': False, 'error': 'El cliente ya existe'})
-            return jsonify({'success': False, 'error': error_msg[:200]})
+            
+            err = stderr.decode().lower()
+            if 'bad decrypt' in err or 'pass phrase' in err:
+                return jsonify({'success': False, 'error': 'Contraseña de CA incorrecta'})
+            if 'already exists' in err:
+                return jsonify({'success': False, 'error': 'Ya existe un cliente con ese nombre'})
+            return jsonify({'success': False, 'error': stderr.decode()[:200]})
         
-        # Exportar .ovpn
-        cmd_export = f'docker run -v {VOLUME_NAME}:/etc/openvpn --rm kylemanna/openvpn ovpn_getclient {name}'
-        result = subprocess.run(cmd_export, shell=True, capture_output=True, timeout=30)
+        cmd2 = f'docker run -v {VOLUME_NAME}:/etc/openvpn --rm kylemanna/openvpn ovpn_getclient {name}'
+        result = subprocess.run(cmd2, shell=True, capture_output=True, timeout=30)
         
         if result.returncode != 0:
-            return jsonify({'success': False, 'error': 'Error exportando archivo'})
+            return jsonify({'success': False, 'error': 'Error exportando configuración'})
         
-        # Guardar archivo
         os.makedirs(CLIENTS_DIR, exist_ok=True)
         with open(f'{CLIENTS_DIR}/{name}.ovpn', 'wb') as f:
             f.write(result.stdout)
         
-        # Guardar info del cliente en DB
         db = load_clients_db()
         db['clients'][name] = {
-            'type': client_type,
+            'group': group_id,
             'ip': assigned_ip
         }
         save_clients_db(db)
         
-        return jsonify({'success': True, 'name': name, 'type': client_type, 'ip': assigned_ip})
+        return jsonify({'success': True, 'name': name, 'ip': assigned_ip, 'group': group_id})
         
     except subprocess.TimeoutExpired:
         return jsonify({'success': False, 'error': 'Timeout - operación tardó demasiado'})
@@ -516,80 +843,62 @@ def revoke_client():
     if not name or not password:
         return jsonify({'success': False, 'error': 'Nombre y contraseña requeridos'})
     
-    # Validar nombre
-    if not name.replace('-', '').replace('_', '').isalnum():
+    if not re.match(r'^[a-zA-Z0-9_-]+$', name):
         return jsonify({'success': False, 'error': 'Nombre inválido'})
     
     try:
-        # Usar EASYRSA_BATCH=1 para evitar confirmación "yes"
-        # Solo necesita password 2 veces (revoke + CRL update)
         cmd = f'docker run -v {VOLUME_NAME}:/etc/openvpn --rm -i -e EASYRSA_BATCH=1 kylemanna/openvpn ovpn_revokeclient {name} remove'
         proc = subprocess.Popen(cmd, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        # Enviar password dos veces (revoke + CRL)
-        inputs = f'{password}\n{password}\n'.encode()
-        stdout, stderr = proc.communicate(input=inputs, timeout=120)
+        stdout, stderr = proc.communicate(input=f'{password}\n{password}\n'.encode(), timeout=120)
         
-        output = stdout.decode() + stderr.decode()
-        output_lower = output.lower()
+        output = (stdout.decode() + stderr.decode()).lower()
+        success = 'revoking' in output or 'data base updated' in output
         
-        # Verificar si el certificado fue revocado exitosamente
-        # Buscar indicadores de éxito en el output
-        revoke_success = 'revoking certificate' in output_lower or 'revocation was successful' in output_lower or 'data base updated' in output_lower
+        if 'unable to find' in output or 'not found' in output:
+            ovpn = f'{CLIENTS_DIR}/{name}.ovpn'
+            if os.path.exists(ovpn):
+                os.remove(ovpn)
+                db = load_clients_db()
+                if name in db.get('clients', {}):
+                    del db['clients'][name]
+                    save_clients_db(db)
+                if os.path.exists(f'{CCD_DIR}/{name}'):
+                    os.remove(f'{CCD_DIR}/{name}')
+                return jsonify({'success': True})
+            return jsonify({'success': False, 'error': 'Cliente no encontrado'})
         
-        # Verificar errores específicos
-        if 'unable to find' in output_lower or 'not found' in output_lower or 'no such file' in output_lower:
-            # El cliente no existe - eliminar archivo .ovpn si existe
-            ovpn_file = f'{CLIENTS_DIR}/{name}.ovpn'
-            if os.path.exists(ovpn_file):
-                os.remove(ovpn_file)
-                return jsonify({'success': True, 'message': 'Cliente ya revocado, archivo eliminado'})
-            return jsonify({'success': False, 'error': f'Cliente "{name}" no encontrado'})
-        
-        # Si hubo error de password Y no hay indicadores de éxito
-        if ('bad decrypt' in output_lower or 'wrong pass' in output_lower) and not revoke_success:
+        if 'bad decrypt' in output and not success:
             return jsonify({'success': False, 'error': 'Contraseña incorrecta'})
         
-        # Si el return code es error pero hay indicadores de éxito, considerar exitoso
-        if proc.returncode != 0 and not revoke_success:
+        if proc.returncode != 0 and not success:
             return jsonify({'success': False, 'error': output[:300]})
         
-        # Eliminar archivo .ovpn
-        ovpn_file = f'{CLIENTS_DIR}/{name}.ovpn'
-        if os.path.exists(ovpn_file):
-            os.remove(ovpn_file)
+        ovpn = f'{CLIENTS_DIR}/{name}.ovpn'
+        if os.path.exists(ovpn):
+            os.remove(ovpn)
+        
+        db = load_clients_db()
+        if name in db.get('clients', {}):
+            del db['clients'][name]
+            save_clients_db(db)
+        
+        if os.path.exists(f'{CCD_DIR}/{name}'):
+            os.remove(f'{CCD_DIR}/{name}')
         
         return jsonify({'success': True})
         
     except subprocess.TimeoutExpired:
-        return jsonify({'success': False, 'error': 'Timeout - operación tardó demasiado'})
+        return jsonify({'success': False, 'error': 'Timeout'})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
-
-@app.route('/api/delete', methods=['POST'])
-@login_required
-def delete_ovpn():
-    """Elimina solo el archivo .ovpn sin revocar el certificado"""
-    data = request.json
-    name = data.get('name', '').strip()
-    
-    if not name:
-        return jsonify({'success': False, 'error': 'Nombre requerido'})
-    
-    ovpn_file = f'{CLIENTS_DIR}/{name}.ovpn'
-    if os.path.exists(ovpn_file):
-        os.remove(ovpn_file)
-        return jsonify({'success': True})
-    else:
-        return jsonify({'success': False, 'error': 'Archivo no encontrado'})
 
 @app.route('/download/<name>')
 @login_required
 def download(name):
-    # Sanitizar nombre
     name = re.sub(r'[^a-zA-Z0-9_-]', '', name)
-    filepath = f'{CLIENTS_DIR}/{name}.ovpn'
-    if os.path.exists(filepath):
-        return send_file(filepath, as_attachment=True, download_name=f'{name}.ovpn')
+    path = f'{CLIENTS_DIR}/{name}.ovpn'
+    if os.path.exists(path):
+        return send_file(path, as_attachment=True, download_name=f'{name}.ovpn')
     return 'Archivo no encontrado', 404
 
 if __name__ == '__main__':
