@@ -86,33 +86,55 @@ def confirm_ip_used(group_id, ip_octet):
         save_clients_db(db)
 
 def recalculate_group_counters():
-    """Recalcula los contadores de cada grupo basándose en los clientes reales"""
+    """Recalcula los contadores de cada grupo basándose en los clientes reales que existen como archivos .ovpn"""
     db = load_clients_db()
     
-    # Contar clientes por grupo y encontrar la IP más alta usada
-    group_max_ips = {}
-    for client_name, client_info in db.get('clients', {}).items():
-        gid = client_info.get('group')
-        if gid and gid in db['groups']:
-            ip_str = client_info.get('ip', '')
-            if ip_str:
-                try:
-                    ip_octet = int(ip_str.split('.')[-1])
-                    if gid not in group_max_ips or ip_octet > group_max_ips[gid]:
-                        group_max_ips[gid] = ip_octet
-                except:
-                    pass
+    # Primero, obtener lista de clientes que realmente existen (archivos .ovpn)
+    existing_clients = set()
+    if os.path.exists(CLIENTS_DIR):
+        for f in os.listdir(CLIENTS_DIR):
+            if f.endswith('.ovpn'):
+                existing_clients.add(f.replace('.ovpn', ''))
     
-    # Actualizar next_ip de cada grupo
+    # Limpiar clientes de la DB que ya no existen
+    clients_to_remove = []
+    for client_name in db.get('clients', {}).keys():
+        if client_name not in existing_clients:
+            clients_to_remove.append(client_name)
+    
+    for client_name in clients_to_remove:
+        del db['clients'][client_name]
+    
+    # Contar clientes reales por grupo
+    group_clients = {}  # grupo -> lista de IPs usadas
+    for client_name, client_info in db.get('clients', {}).items():
+        if client_name in existing_clients:
+            gid = client_info.get('group')
+            if gid and gid in db['groups']:
+                ip_str = client_info.get('ip', '')
+                if ip_str:
+                    try:
+                        ip_octet = int(ip_str.split('.')[-1])
+                        if gid not in group_clients:
+                            group_clients[gid] = []
+                        group_clients[gid].append(ip_octet)
+                    except:
+                        pass
+    
+    # Actualizar next_ip de cada grupo basándose en la IP más alta usada
     for gid, group in db['groups'].items():
-        if gid in group_max_ips:
-            db['groups'][gid]['next_ip'] = group_max_ips[gid] + 1
+        if gid in group_clients and group_clients[gid]:
+            max_ip = max(group_clients[gid])
+            db['groups'][gid]['next_ip'] = max_ip + 1
         else:
-            # Sin clientes, resetear al inicio
+            # Sin clientes, resetear al inicio del rango
             db['groups'][gid]['next_ip'] = group['range_start']
     
     save_clients_db(db)
-    return True
+    return {
+        'cleaned': clients_to_remove,
+        'groups': {gid: len(ips) for gid, ips in group_clients.items()}
+    }
 
 def login_required(f):
     @wraps(f)
@@ -708,8 +730,8 @@ def get_next_group_range():
 @login_required
 def api_recalculate():
     """Recalcula los contadores de grupos basándose en clientes reales"""
-    recalculate_group_counters()
-    return jsonify({'success': True, 'message': 'Contadores recalculados'})
+    result = recalculate_group_counters()
+    return jsonify({'success': True, 'message': 'Contadores recalculados', 'details': result})
 
 @app.route('/api/clients')
 @login_required
