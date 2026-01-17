@@ -74,9 +74,45 @@ def get_next_ip_for_group(group_id):
     ip = group.get('next_ip', group['range_start'])
     if ip > group['range_end']:
         return None
-    db['groups'][group_id]['next_ip'] = ip + 1
-    save_clients_db(db)
+    # No incrementamos aquí, lo haremos después de confirmar que el cliente se creó
     return ip
+
+def confirm_ip_used(group_id, ip_octet):
+    """Confirma que la IP fue usada y actualiza el contador"""
+    db = load_clients_db()
+    group = db['groups'].get(group_id)
+    if group and ip_octet >= group.get('next_ip', group['range_start']):
+        db['groups'][group_id]['next_ip'] = ip_octet + 1
+        save_clients_db(db)
+
+def recalculate_group_counters():
+    """Recalcula los contadores de cada grupo basándose en los clientes reales"""
+    db = load_clients_db()
+    
+    # Contar clientes por grupo y encontrar la IP más alta usada
+    group_max_ips = {}
+    for client_name, client_info in db.get('clients', {}).items():
+        gid = client_info.get('group')
+        if gid and gid in db['groups']:
+            ip_str = client_info.get('ip', '')
+            if ip_str:
+                try:
+                    ip_octet = int(ip_str.split('.')[-1])
+                    if gid not in group_max_ips or ip_octet > group_max_ips[gid]:
+                        group_max_ips[gid] = ip_octet
+                except:
+                    pass
+    
+    # Actualizar next_ip de cada grupo
+    for gid, group in db['groups'].items():
+        if gid in group_max_ips:
+            db['groups'][gid]['next_ip'] = group_max_ips[gid] + 1
+        else:
+            # Sin clientes, resetear al inicio
+            db['groups'][gid]['next_ip'] = group['range_start']
+    
+    save_clients_db(db)
+    return True
 
 def login_required(f):
     @wraps(f)
@@ -668,6 +704,13 @@ def get_next_group_range():
         'capacity': GROUP_SIZE
     })
 
+@app.route('/api/recalculate', methods=['POST'])
+@login_required
+def api_recalculate():
+    """Recalcula los contadores de grupos basándose en clientes reales"""
+    recalculate_group_counters()
+    return jsonify({'success': True, 'message': 'Contadores recalculados'})
+
 @app.route('/api/clients')
 @login_required
 def list_clients():
@@ -694,7 +737,8 @@ def connected_clients():
     db = load_clients_db()
     
     try:
-        cmd = f'docker run -v {VOLUME_NAME}:/etc/openvpn --rm kylemanna/openvpn cat /tmp/openvpn-status.log 2>/dev/null || echo ""'
+        # Usar docker exec en el contenedor en ejecución, no docker run
+        cmd = 'docker exec openvpn cat /tmp/openvpn-status.log 2>/dev/null || echo ""'
         result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=10)
         lines = result.stdout.strip().split('\n')
         
@@ -818,6 +862,9 @@ def create_client():
         os.makedirs(CLIENTS_DIR, exist_ok=True)
         with open(f'{CLIENTS_DIR}/{name}.ovpn', 'wb') as f:
             f.write(result.stdout)
+        
+        # Confirmar que la IP fue usada (actualiza el contador)
+        confirm_ip_used(group_id, ip_octet)
         
         db = load_clients_db()
         db['clients'][name] = {
