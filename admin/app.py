@@ -15,13 +15,27 @@ CCD_DIR = "/app/ccd"
 CLIENTS_DB = "/app/clients/clients.json"
 ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin123')
 
-VPN_SUBNET = "192.168.255"
+# Subred /20: 10.8.0.0 - 10.8.15.255 (4096 IPs)
+VPN_SUBNET_BASE = "10.8"
 
 # Configuracion de rangos
-ADMIN_RANGE = {'start': 4, 'end': 13}  # 10 IPs para admins
-GROUP_SIZE = 20  # Cada grupo tiene 20 IPs
-FIRST_GROUP_START = 20  # Primer grupo empieza en .20
-MAX_GROUP_END = 239  # Ultimo octet disponible
+ADMIN_RANGE = {'start': 4, 'end': 15}  # 12 IPs para admins (10.8.0.4 - 10.8.0.15)
+GROUP_SIZE = 12  # Cada grupo tiene 12 IPs
+FIRST_GROUP_START = 16  # Primer grupo empieza en IP 16 (10.8.0.16)
+MAX_IP = 4095  # Ultimo IP disponible (10.8.15.255)
+
+def ip_to_octets(ip_num):
+    """Convierte número de IP (0-4095) a los dos últimos octetos"""
+    return ip_num // 256, ip_num % 256
+
+def octets_to_ip(third, fourth):
+    """Convierte octetos a IP completa"""
+    return f"{VPN_SUBNET_BASE}.{third}.{fourth}"
+
+def ip_num_to_full(ip_num):
+    """Convierte número a IP completa"""
+    third, fourth = ip_to_octets(ip_num)
+    return octets_to_ip(third, fourth)
 
 def load_clients_db():
     if os.path.exists(CLIENTS_DB):
@@ -381,7 +395,7 @@ HTML_TEMPLATE = '''
             const d = await r.json();
             if (d.available) {
                 document.getElementById('groupRangePreview').textContent = 
-                    `192.168.255.${d.start} - 192.168.255.${d.end}`;
+                    `${d.start_ip} - ${d.end_ip}`;
             } else {
                 document.getElementById('groupRangePreview').textContent = '❌ No hay más rangos disponibles';
             }
@@ -519,7 +533,7 @@ HTML_TEMPLATE = '''
                                 </div>
                                 <div style="text-align:right;">
                                     <div><strong>${used}</strong> / ${total}</div>
-                                    <div class="group-range">.${g.range_start} - .${g.range_end}</div>
+                                    <div class="group-range">${g.start_ip} - ${g.end_ip}</div>
                                 </div>
                             </div>
                         </div>
@@ -663,7 +677,12 @@ def index():
 @login_required
 def get_groups():
     db = load_clients_db()
-    return jsonify({'groups': db.get('groups', {})})
+    groups = db.get('groups', {})
+    # Agregar campos de IP legibles para la UI
+    for gid, g in groups.items():
+        g['start_ip'] = ip_num_to_full(g['range_start'])
+        g['end_ip'] = ip_num_to_full(g['range_end'])
+    return jsonify({'groups': groups})
 
 @app.route('/api/groups', methods=['POST'])
 @login_required
@@ -691,7 +710,7 @@ def create_group():
     next_start = db.get('next_group_start', FIRST_GROUP_START)
     next_end = next_start + GROUP_SIZE - 1
     
-    if next_end > MAX_GROUP_END:
+    if next_end > MAX_IP:
         return jsonify({'success': False, 'error': 'No hay más rangos de IP disponibles'})
     
     db['groups'][group_id] = {
@@ -707,7 +726,10 @@ def create_group():
     db['next_group_start'] = next_start + GROUP_SIZE
     save_clients_db(db)
     
-    return jsonify({'success': True, 'group_id': group_id, 'range_start': next_start, 'range_end': next_end})
+    # Retornar IPs legibles
+    start_ip = ip_num_to_full(next_start)
+    end_ip = ip_num_to_full(next_end)
+    return jsonify({'success': True, 'group_id': group_id, 'range_start': next_start, 'range_end': next_end, 'start_ip': start_ip, 'end_ip': end_ip})
 
 @app.route('/api/next-group-range', methods=['GET'])
 @login_required
@@ -716,13 +738,19 @@ def get_next_group_range():
     next_start = db.get('next_group_start', FIRST_GROUP_START)
     next_end = next_start + GROUP_SIZE - 1
     
-    if next_end > MAX_GROUP_END:
+    if next_end > MAX_IP:
         return jsonify({'available': False})
+    
+    # Convertir a IPs legibles
+    start_ip = ip_num_to_full(next_start)
+    end_ip = ip_num_to_full(next_end)
     
     return jsonify({
         'available': True,
         'start': next_start,
         'end': next_end,
+        'start_ip': start_ip,
+        'end_ip': end_ip,
         'capacity': GROUP_SIZE
     })
 
@@ -844,21 +872,24 @@ def create_client():
     if not group:
         return jsonify({'success': False, 'error': 'Grupo no existe'})
     
-    ip_octet = get_next_ip_for_group(group_id)
-    if ip_octet is None:
+    ip_num = get_next_ip_for_group(group_id)
+    if ip_num is None:
         return jsonify({'success': False, 'error': 'Grupo lleno, no hay más IPs disponibles'})
     
-    assigned_ip = f'{VPN_SUBNET}.{ip_octet}'
+    # Convertir número de IP a IP completa
+    assigned_ip = ip_num_to_full(ip_num)
     
     try:
         os.makedirs(CCD_DIR, exist_ok=True)
-        if ip_octet % 2 == 0:
-            peer_octet = ip_octet + 1
+        # Para /20, calcular peer IP (OpenVPN necesita pares)
+        if ip_num % 2 == 0:
+            peer_num = ip_num + 1
         else:
-            peer_octet = ip_octet - 1
+            peer_num = ip_num - 1
+        peer_ip = ip_num_to_full(peer_num)
         
         with open(f'{CCD_DIR}/{name}', 'w') as f:
-            f.write(f'ifconfig-push {assigned_ip} {VPN_SUBNET}.{peer_octet}\n')
+            f.write(f'ifconfig-push {assigned_ip} {peer_ip}\n')
         
         cmd = f'docker run -v {VOLUME_NAME}:/etc/openvpn --rm -i kylemanna/openvpn easyrsa build-client-full {name} nopass'
         proc = subprocess.Popen(cmd, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -886,7 +917,7 @@ def create_client():
             f.write(result.stdout)
         
         # Confirmar que la IP fue usada (actualiza el contador)
-        confirm_ip_used(group_id, ip_octet)
+        confirm_ip_used(group_id, ip_num)
         
         db = load_clients_db()
         db['clients'][name] = {
