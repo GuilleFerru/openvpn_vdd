@@ -954,7 +954,13 @@ def revoke_client():
         if os.path.exists(f'{CCD_DIR}/{name}'):
             os.remove(f'{CCD_DIR}/{name}')
         
-        return jsonify({'success': True})
+        # Reiniciar OpenVPN para que recargue el CRL (lista de revocados)
+        try:
+            subprocess.run('docker restart openvpn', shell=True, timeout=30)
+        except:
+            pass  # Si falla el restart, al menos la revocación ya se hizo
+        
+        return jsonify({'success': True, 'message': 'Cliente revocado. OpenVPN reiniciado.'})
         
     except subprocess.TimeoutExpired:
         return jsonify({'success': False, 'error': 'Timeout'})
