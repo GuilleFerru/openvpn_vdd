@@ -219,13 +219,13 @@ th { color: #888; font-weight: normal; font-size: 13px; }
 }
 
 /* Login page */
-.login-container {
+body.login-page {
+    max-width: none;
+    padding: 0;
     display: flex;
     justify-content: center;
     align-items: center;
     min-height: 100vh;
-    margin: 0;
-    padding: 0;
 }
 .login-box {
     background: rgba(22, 33, 62, 0.95);
