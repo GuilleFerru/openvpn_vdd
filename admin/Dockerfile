@@ -3,9 +3,12 @@ FROM python:3.11-slim
 RUN pip install flask
 
 WORKDIR /app
-COPY app.py .
 
-# Docker CLI se monta desde el host via docker-compose
-# No necesitamos instalarlo aquí
+# Copy application files
+COPY app.py .
+COPY templates/ templates/
+COPY static/ static/
+
+# Docker CLI is mounted from host via docker-compose
 
 CMD ["python", "app.py"]

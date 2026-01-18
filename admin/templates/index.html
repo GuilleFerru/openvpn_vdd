@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>OpenVPN Admin</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="header">
+        <h1>🔐 OpenVPN Admin</h1>
+        <a href="/logout" class="btn-logout">🚪 Cerrar sesión</a>
+    </div>
+
+    <!-- Connected Clients -->
+    <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+            <h2>📡 Clientes Conectados</h2>
+            <button class="btn-small btn-secondary" id="btnRefreshConnected" onclick="loadConnected()">🔄</button>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Cliente</th>
+                    <th>Grupo</th>
+                    <th>IP VPN</th>
+                    <th>IP Real</th>
+                    <th>Conectado</th>
+                    <th>Tráfico</th>
+                </tr>
+            </thead>
+            <tbody id="connectedList">
+                <tr><td colspan="6" style="color:#666">Cargando...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Grid: Groups + Create/Revoke -->
+    <div class="grid">
+        <div>
+            <div class="card">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <h2>📁 Grupos</h2>
+                    <button class="btn-small" onclick="showCreateGroupModal()">+ Nuevo Grupo</button>
+                </div>
+                <div id="groupsList"></div>
+            </div>
+        </div>
+        <div>
+            <div class="card">
+                <h2>➕ Crear Cliente</h2>
+                <p class="info-text">Los clientes del mismo grupo pueden verse entre sí. Admins ven todo.</p>
+                <form id="createForm">
+                    <input type="text" id="clientName" placeholder="Nombre (ej: gw-oficina, tecnico-juan)" required>
+                    <select id="clientGroup" required>
+                        <option value="">-- Seleccionar grupo --</option>
+                    </select>
+                    <input type="password" id="caPassword" placeholder="Contraseña de la CA" required>
+                    <button type="submit">Crear Cliente</button>
+                </form>
+                <div id="createStatus" class="status"></div>
+            </div>
+
+            <div class="card">
+                <h2>⚠️ Revocar Cliente</h2>
+                <form id="revokeForm">
+                    <input type="text" id="revokeClientName" placeholder="Nombre del cliente" required>
+                    <input type="password" id="revokePassword" placeholder="Contraseña de la CA" required>
+                    <button type="submit" class="btn-danger">Revocar</button>
+                </form>
+                <div id="revokeStatus" class="status"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Clients by Group -->
+    <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+            <h2>📋 Clientes por Grupo</h2>
+            <button class="btn-small btn-secondary" id="btnRefreshClients" onclick="loadClients()">🔄</button>
+        </div>
+        <div id="clientsByGroup"></div>
+    </div>
+
+    <!-- Modal: Create Group -->
+    <div id="modalCreateGroup" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>➕ Nuevo Grupo</h2>
+                <button class="modal-close" onclick="hideModal('modalCreateGroup')">&times;</button>
+            </div>
+            <form id="createGroupForm">
+                <label class="info-text">Nombre del grupo:</label>
+                <input type="text" id="groupName" placeholder="Ej: Empresa ABC, Fábrica Norte" required>
+                
+                <label class="info-text">Icono:</label>
+                <div class="icon-picker" id="iconPicker">
+                    <span class="icon-option selected" data-icon="🏢">🏢</span>
+                    <span class="icon-option" data-icon="🏭">🏭</span>
+                    <span class="icon-option" data-icon="🏬">🏬</span>
+                    <span class="icon-option" data-icon="🏪">🏪</span>
+                    <span class="icon-option" data-icon="🏥">🏥</span>
+                    <span class="icon-option" data-icon="🏫">🏫</span>
+                    <span class="icon-option" data-icon="🏨">🏨</span>
+                    <span class="icon-option" data-icon="🏦">🏦</span>
+                    <span class="icon-option" data-icon="⚡">⚡</span>
+                    <span class="icon-option" data-icon="🌐">🌐</span>
+                    <span class="icon-option" data-icon="🔧">🔧</span>
+                    <span class="icon-option" data-icon="📡">📡</span>
+                </div>
+                
+                <label class="info-text">Rango de IPs asignado:</label>
+                <div class="range-preview" id="groupRangePreview">Cargando...</div>
+                <p class="info-text">Cada grupo puede tener hasta 12 clientes.</p>
+                
+                <button type="submit">Crear Grupo</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Edit Group -->
+    <div id="modalEditGroup" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>✏️ Editar Grupo</h2>
+                <button class="modal-close" onclick="hideModal('modalEditGroup')">&times;</button>
+            </div>
+            <form id="editGroupForm">
+                <input type="hidden" id="editGroupId">
+                <label class="info-text">Nombre del grupo:</label>
+                <input type="text" id="editGroupName" placeholder="Nombre del grupo" required>
+                
+                <label class="info-text">Icono:</label>
+                <div class="icon-picker" id="editIconPicker">
+                    <span class="icon-option" data-icon="🏢">🏢</span>
+                    <span class="icon-option" data-icon="🏭">🏭</span>
+                    <span class="icon-option" data-icon="🏬">🏬</span>
+                    <span class="icon-option" data-icon="🏪">🏪</span>
+                    <span class="icon-option" data-icon="🏥">🏥</span>
+                    <span class="icon-option" data-icon="🏫">🏫</span>
+                    <span class="icon-option" data-icon="🏨">🏨</span>
+                    <span class="icon-option" data-icon="🏦">🏦</span>
+                    <span class="icon-option" data-icon="⚡">⚡</span>
+                    <span class="icon-option" data-icon="🌐">🌐</span>
+                    <span class="icon-option" data-icon="🔧">🔧</span>
+                    <span class="icon-option" data-icon="📡">📡</span>
+                </div>
+                
+                <button type="submit">Guardar Cambios</button>
+            </form>
+        </div>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
