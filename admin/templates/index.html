@@ -16,12 +16,12 @@
     <div class="card">
         <div class="collapsible-header" onclick="toggleSection('connectedSection')">
             <div style="display:flex; align-items:center; gap:10px;">
-                <span class="collapse-icon" id="connectedSection-icon">▼</span>
+                <span class="collapse-icon collapsed" id="connectedSection-icon">▼</span>
                 <h2>📡 Clientes Conectados <span id="connectedCount" class="count-badge"></span></h2>
             </div>
             <button class="btn-small btn-secondary" id="btnRefreshConnected" onclick="event.stopPropagation(); loadConnected()">🔄</button>
         </div>
-        <div class="collapsible-content" id="connectedSection">
+        <div class="collapsible-content collapsed" id="connectedSection">
             <table>
                 <thead>
                     <tr>
@@ -44,12 +44,12 @@
     <div class="card" id="rejectedCard" style="display:none;">
         <div class="collapsible-header" onclick="toggleSection('rejectedSection')">
             <div style="display:flex; align-items:center; gap:10px;">
-                <span class="collapse-icon" id="rejectedSection-icon">▼</span>
+                <span class="collapse-icon collapsed" id="rejectedSection-icon">▼</span>
                 <h2>🚫 Clientes Rechazados <span id="rejectedCount" class="count-badge count-danger"></span></h2>
             </div>
             <button class="btn-small btn-secondary" onclick="event.stopPropagation(); loadRejected()">🔄</button>
         </div>
-        <div class="collapsible-content" id="rejectedSection">
+        <div class="collapsible-content collapsed" id="rejectedSection">
             <p class="info-text">Clientes bloqueados por no tener archivo CCD válido (revocados o inexistentes)</p>
             <table>
                 <thead>
@@ -109,12 +109,12 @@
     <div class="card">
         <div class="collapsible-header" onclick="toggleSection('clientsSection')">
             <div style="display:flex; align-items:center; gap:10px;">
-                <span class="collapse-icon" id="clientsSection-icon">▼</span>
+                <span class="collapse-icon collapsed" id="clientsSection-icon">▼</span>
                 <h2>📋 Clientes por Grupo <span id="clientsCount" class="count-badge"></span></h2>
             </div>
             <button class="btn-small btn-secondary" id="btnRefreshClients" onclick="event.stopPropagation(); loadClients()">🔄</button>
         </div>
-        <div class="collapsible-content" id="clientsSection">
+        <div class="collapsible-content collapsed" id="clientsSection">
             <div id="clientsByGroup"></div>
         </div>
     </div>

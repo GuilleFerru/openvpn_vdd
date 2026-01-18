@@ -286,14 +286,14 @@ async function loadClients() {
         html += `
             <div class="group-header-collapsible" onclick="toggleGroup('${gid}')">
                 <div style="display:flex; align-items:center; gap:8px;">
-                    <span class="collapse-icon" id="group-icon-${gid}">▼</span>
+                    <span class="collapse-icon collapsed" id="group-icon-${gid}">▼</span>
                     <span style="font-size:20px;">${g.icon}</span>
                     <strong style="color:#ffd700;">${g.name}</strong>
                     <span class="count-badge">${clients.length}</span>
                     ${onlineCount > 0 ? `<span class="badge badge-online">${onlineCount} online</span>` : ''}
                 </div>
             </div>
-            <div class="group-clients" id="group-content-${gid}">
+            <div class="group-clients collapsed" id="group-content-${gid}">
         `;
         
         if (clients.length === 0) {

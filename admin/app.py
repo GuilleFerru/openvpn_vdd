@@ -5,6 +5,7 @@ Flask application for managing OpenVPN clients and groups
 
 from flask import Flask, render_template, request, send_file, jsonify, redirect, url_for, session
 from functools import wraps
+from datetime import datetime, timedelta
 import subprocess
 import os
 import re
@@ -50,6 +51,29 @@ def ip_num_to_full(ip_num):
     """Convert number to full IP address"""
     third, fourth = ip_to_octets(ip_num)
     return octets_to_ip(third, fourth)
+
+
+def utc_to_argentina(utc_time_str):
+    """Convert UTC time string to Argentina time (GMT-3)"""
+    try:
+        # OpenVPN format: "Thu Jan 18 20:15:23 2026" or similar
+        # Try common formats
+        formats = [
+            '%a %b %d %H:%M:%S %Y',
+            '%Y-%m-%d %H:%M:%S',
+            '%a %b %d %H:%M:%S %Y'
+        ]
+        for fmt in formats:
+            try:
+                utc_dt = datetime.strptime(utc_time_str.strip(), fmt)
+                # Subtract 3 hours for Argentina (GMT-3)
+                arg_dt = utc_dt - timedelta(hours=3)
+                return arg_dt.strftime('%a %b %d %H:%M:%S %Y')
+            except ValueError:
+                continue
+        return utc_time_str  # Return original if parsing fails
+    except:
+        return utc_time_str
 
 
 # =============================================================================
@@ -444,7 +468,7 @@ def connected_clients():
                         'real_ip': parts[1].split(':')[0],
                         'bytes_recv': format_bytes(int(parts[2])) if parts[2].isdigit() else parts[2],
                         'bytes_sent': format_bytes(int(parts[3])) if parts[3].isdigit() else parts[3],
-                        'connected_since': parts[4] if len(parts) > 4 else 'N/A',
+                        'connected_since': utc_to_argentina(parts[4]) if len(parts) > 4 else 'N/A',
                         'vpn_ip': info.get('ip', 'Dinámica'),
                         'group_name': grp.get('name', ''),
                         'group_icon': grp.get('icon', '')
@@ -504,7 +528,7 @@ def rejected_clients():
                         rejected[name] = {
                             'name': name,
                             'real_ip': real_ip,
-                            'last_attempt': timestamp,
+                            'last_attempt': utc_to_argentina(timestamp),
                             'reason': 'Sin archivo CCD'
                         }
                         
