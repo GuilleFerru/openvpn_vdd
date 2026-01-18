@@ -1,181 +1,215 @@
-# OpenVPN Server - Docker
+# OpenVPN Admin Panel
 
-Servidor OpenVPN usando `kylemanna/openvpn`. Sin límite de conexiones simultáneas.
+Sistema de administración web para OpenVPN con aislamiento por grupos de clientes.
 
-## Características
+![OpenVPN Admin](https://img.shields.io/badge/OpenVPN-Admin-00d4ff?style=for-the-badge)
+![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=for-the-badge)
+![Flask](https://img.shields.io/badge/Flask-Python-green?style=for-the-badge)
 
-- ✅ Panel web de administración
-- ✅ Sistema de grupos aislados (cada cliente solo ve su grupo)
-- ✅ Grupo Admin puede ver todos los clientes
-- ✅ Subred /20 con capacidad para **340 grupos x 12 clientes = 4080 clientes**
-- ✅ Ver clientes conectados en tiempo real
+## 🌟 Características
 
-## Requisitos
+- **Panel Web Moderno**: Interfaz responsive con tema oscuro
+- **Gestión de Grupos**: Organiza clientes en grupos aislados entre sí
+- **Aislamiento de Red**: Clientes de un grupo solo pueden comunicarse entre ellos
+- **Grupo Admin**: Los administradores pueden ver y comunicarse con todos
+- **IPs Fijas**: Cada cliente recibe una IP fija dentro de su grupo
+- **Descarga .ovpn**: Generación y descarga de archivos de configuración
+- **Seguridad CCD-Exclusive**: Solo clientes con CCD válido pueden conectarse
+- **Monitoreo en Tiempo Real**: Ver clientes conectados y rechazados
+- **Persistencia de Estado**: Las preferencias de UI se mantienen entre recargas
 
-- Docker y Docker Compose instalados
-- Puerto UDP 1194 disponible y abierto en firewall
-- Puerto TCP 8888 para panel de administración
-- IP pública del servidor
+## 📋 Requisitos
 
-## Instalación en VM Linux
+- Ubuntu/Debian Server (probado en Ubuntu 22.04)
+- Docker y Docker Compose
+- IP pública fija
+- Puerto 1194/UDP abierto en firewall
+- Puerto 8888/TCP para el panel admin (opcional, puede cambiarse)
 
-### 1. Clonar repositorio
+## 🚀 Instalación
+
+### 1. Clonar el repositorio
 
 ```bash
-git clone https://github.com/TU_USUARIO/openvpn.git
-cd openvpn
+git clone https://github.com/GuilleFerru/openvpn_vdd.git
+cd openvpn_vdd
 ```
 
-### 2. Dar permisos a los scripts
+### 2. Configurar variables de entorno
+
+```bash
+cp .env.example .env
+nano .env
+```
+
+Editar las variables:
+```env
+ADMIN_PASSWORD=tu_contraseña_segura
+SECRET_KEY=clave_secreta_para_flask
+```
+
+### 3. Dar permisos a los scripts
 
 ```bash
 chmod +x *.sh
 ```
 
-### 3. Configuración inicial (solo la primera vez)
+### 4. Inicializar OpenVPN
 
 ```bash
 ./setup.sh <IP_PUBLICA_DEL_SERVIDOR>
 ```
 
-Ejemplo:
+**Ejemplo:**
 ```bash
 ./setup.sh 200.59.147.112
 ```
 
-**IMPORTANTE:** 
-- Te pedirá crear una contraseña para la CA (Autoridad Certificadora)
-- **ANOTALA** - La necesitarás cada vez que crees o revoques un cliente
+Durante la inicialización:
+1. Te pedirá crear una **contraseña para la CA** (Autoridad Certificadora)
+2. **¡ANOTALA!** La necesitarás para crear cada cliente
+3. Te pedirá un "Common Name" - podés dejarlo por defecto
 
-### 4. Habilitar CCD (Client Config Directory)
+### 5. Habilitar CCD Exclusivo (Seguridad)
 
 ```bash
 ./enable-ccd.sh
 ```
 
-Esto permite asignar IPs fijas a los gateways.
+Esto activa:
+- Solo clientes con archivo CCD pueden conectarse
+- Clientes revocados son bloqueados automáticamente
 
-### 5. Configurar contraseña del panel admin
+### 6. Iniciar los servicios
 
 ```bash
-echo "ADMIN_PASSWORD=TuContraseñaSegura" > .env
+docker compose up -d
 ```
 
-### 6. Iniciar el servidor
+### 7. Acceder al panel
 
+Abrir en el navegador: `http://IP_DEL_SERVIDOR:8888`
+
+Ingresar con la contraseña configurada en `.env`
+
+## 🏗️ Arquitectura de Red
+
+```
+Subred: 10.8.0.0/20 (4096 IPs disponibles)
+
+├── Admin (10.8.0.4 - 10.8.0.15)     → 12 IPs - VE TODO
+├── Grupo 1 (10.8.0.16 - 10.8.0.27) → 12 IPs - Aislado
+├── Grupo 2 (10.8.0.28 - 10.8.0.39) → 12 IPs - Aislado
+├── Grupo 3 (10.8.0.40 - 10.8.0.51) → 12 IPs - Aislado
+│   ...
+└── Grupo 340 (10.8.15.244 - 10.8.15.255) → 12 IPs - Aislado
+```
+
+**Capacidad máxima: 340 grupos × 12 clientes = 4080 clientes**
+
+**Reglas de comunicación:**
+- ✅ Clientes del mismo grupo pueden verse entre sí
+- ✅ Admin puede ver a todos los clientes
+- ❌ Clientes de diferentes grupos NO pueden verse
+
+## 📁 Estructura del Proyecto
+
+```
+openvpn_vdd/
+├── admin/
+│   ├── app.py              # API Flask
+│   ├── Dockerfile
+│   ├── static/
+│   │   ├── css/style.css   # Estilos
+│   │   └── js/app.js       # JavaScript
+│   └── templates/
+│       ├── index.html      # Panel principal
+│       └── login.html      # Página de login
+├── ccd/                    # Client Config Directory
+├── docker-compose.yml      # Orquestación Docker
+├── setup.sh                # Instalación inicial
+├── enable-ccd.sh           # Habilitar seguridad CCD
+├── create-client.sh        # Crear cliente (CLI)
+├── revoke-client.sh        # Revocar cliente (CLI)
+├── list-clients.sh         # Listar clientes (CLI)
+├── .env.example            # Variables de ejemplo
+└── README.md
+```
+
+## 🔧 Comandos Útiles
+
+### Ver logs de OpenVPN
+```bash
+docker logs openvpn -f
+```
+
+### Ver logs del panel admin
+```bash
+docker logs openvpn-admin -f
+```
+
+### Reiniciar servicios
+```bash
+docker compose restart
+```
+
+### Reconstruir después de cambios
 ```bash
 docker compose up -d --build
 ```
 
-### 7. Acceder al panel de administración
-
-```
-http://<IP_SERVIDOR>:8888
-```
-
-## Sistema de Grupos
-
-| Grupo | Rango IP | Puede ver | Capacidad |
-|-------|----------|-----------|----------|
-| 🔑 Admin | 10.8.0.4 - 10.8.0.15 | Todo | 12 clientes |
-| 🏢 Grupo 1 | 10.8.0.16 - 10.8.0.27 | Solo su grupo | 12 clientes |
-| 🏢 Grupo 2 | 10.8.0.28 - 10.8.0.39 | Solo su grupo | 12 clientes |
-| ... | ... | ... | ... |
-| 🏢 Grupo 340 | 10.8.15.244 - 10.8.15.255 | Solo su grupo | 12 clientes |
-
-**Total:** 340 grupos × 12 clientes = **4080 clientes**
-
-## Comandos CLI (alternativa al panel web)
-
-### Crear clientes
-
+### Ver clientes conectados (CLI)
 ```bash
-./create-client.sh nombre_usuario
+docker exec openvpn cat /tmp/openvpn-status.log
 ```
 
-El archivo `.ovpn` se guarda en `./clients/nombre_usuario.ovpn`
+## 🔒 Seguridad
 
-## Scripts disponibles
+- **CCD-Exclusive**: Solo clientes con archivo CCD pueden conectarse
+- **Certificados Revocados**: Se bloquean automáticamente
+- **Aislamiento iptables**: Grupos separados a nivel de red
+- **Contraseña CA**: Requerida para crear/revocar clientes
+- **Sesión Flask**: Cookies seguras con secret key
 
-| Script | Descripción |
-|--------|-------------|
-| `./setup.sh <IP>` | Configuración inicial (solo 1 vez) |
-| `./create-client.sh <nombre>` | Crear nuevo cliente VPN |
-| `./revoke-client.sh <nombre>` | Revocar acceso a un cliente |
-| `./list-clients.sh` | Listar todos los clientes |
+## 🐛 Solución de Problemas
 
-## Comandos útiles
-
+### El panel no carga
 ```bash
-# Ver estado del servidor
-docker compose ps
+docker compose logs openvpn-admin
+```
 
-# Ver logs en tiempo real
-docker compose logs -f
+### Clientes no pueden conectarse
+1. Verificar que el puerto 1194/UDP esté abierto
+2. Verificar que el cliente tenga archivo CCD:
+   ```bash
+   ls -la ccd/
+   ```
+3. Ver logs de OpenVPN:
+   ```bash
+   docker logs openvpn --tail 50
+   ```
 
-# Reiniciar servidor
-docker compose restart
-
-# Detener servidor
+### Error "ifconfig-pool conflict"
+```bash
 docker compose down
+docker run -v openvpn_openvpn_data:/etc/openvpn --rm kylemanna/openvpn \
+  sh -c 'sed -i "/^ifconfig-pool/d" /etc/openvpn/openvpn.conf'
+docker compose up -d
 ```
 
-## Configuración del cliente
+## 📖 Documentación
 
-1. Descargar [OpenVPN Connect](https://openvpn.net/client/) (Windows, Mac, iOS, Android)
-2. Importar el archivo `.ovpn` generado
-3. Conectar
+Ver [GUIA_USUARIO.md](GUIA_USUARIO.md) para instrucciones detalladas de uso del panel.
 
-## Puerto
+## 📝 Licencia
 
-| Puerto | Protocolo | Descripción |
-|--------|-----------|-------------|
-| 1194   | UDP       | OpenVPN     |
+MIT License
 
-## Firewall
+## 👨‍💻 Autor
 
-Asegurarse de que el puerto 1194/UDP esté abierto:
+**Guillermo Ferrucci**  
+WeDo IoT Solutions
 
-```bash
-# Ver reglas actuales
-sudo iptables -L -n | grep 1194
+---
 
-# Si usás ufw
-sudo ufw allow 1194/udp
-```
-
-En GCP/Cloud, también abrir el puerto en las reglas de firewall del proyecto.
-
-## Estructura de archivos
-
-```
-openvpn/
-├── docker-compose.yml    # Configuración del contenedor
-├── setup.sh              # Script de instalación inicial
-├── create-client.sh      # Crear nuevos clientes
-├── revoke-client.sh      # Revocar clientes
-├── list-clients.sh       # Listar clientes
-├── clients/              # Archivos .ovpn generados
-│   └── *.ovpn
-└── README.md
-```
-
-## Notas importantes
-
-- **Sin límite de conexiones** (a diferencia de OpenVPN Access Server)
-- La contraseña de la CA es requerida para crear/revocar clientes
-- Los archivos `.ovpn` contienen credenciales - mantenerlos seguros
-- El volumen `openvpn_openvpn_data` contiene todos los certificados
-
-## Backup
-
-Para respaldar la configuración y certificados:
-
-```bash
-docker run -v openvpn_openvpn_data:/etc/openvpn --rm -v $(pwd):/backup alpine tar czf /backup/openvpn-backup.tar.gz /etc/openvpn
-```
-
-## Documentación
-
-- [kylemanna/openvpn GitHub](https://github.com/kylemanna/docker-openvpn)
-- [OpenVPN Connect](https://openvpn.net/client/)
+© 2026 WeDo IoT Solutions
