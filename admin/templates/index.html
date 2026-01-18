@@ -35,6 +35,29 @@
         </table>
     </div>
 
+    <!-- Rejected Clients -->
+    <div class="card" id="rejectedCard" style="display:none;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+            <h2>🚫 Clientes Rechazados</h2>
+            <button class="btn-small btn-secondary" onclick="loadRejected()">🔄</button>
+        </div>
+        <p class="info-text">Clientes que intentaron conectarse pero fueron bloqueados (sin archivo CCD válido)</p>
+        <table>
+            <thead>
+                <tr>
+                    <th>Cliente</th>
+                    <th>IP Real</th>
+                    <th>Último Intento</th>
+                    <th>Intentos</th>
+                    <th>Motivo</th>
+                </tr>
+            </thead>
+            <tbody id="rejectedList">
+                <tr><td colspan="5" style="color:#666">Cargando...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
     <!-- Grid: Groups + Create/Revoke -->
     <div class="grid">
         <div>

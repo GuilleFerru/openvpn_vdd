@@ -454,6 +454,65 @@ def connected_clients():
     return jsonify({'clients': clients})
 
 
+@app.route('/api/rejected')
+@login_required
+def rejected_clients():
+    """Get list of clients rejected due to missing CCD (ccd-exclusive)"""
+    rejected = {}
+    
+    try:
+        # Get last 500 lines of OpenVPN logs
+        cmd = 'docker logs openvpn --tail 500 2>&1'
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=15)
+        lines = result.stdout.strip().split('\n')
+        
+        for line in lines:
+            # Look for CCD auth failures
+            if 'client-config-dir authentication failed' in line and 'common name' in line:
+                # Extract client name
+                match = re.search(r"common name '([^']+)'", line)
+                if match:
+                    name = match.group(1)
+                    # Extract timestamp
+                    ts_match = re.search(r'^(\w+ \w+ \d+ \d+:\d+:\d+ \d+)', line)
+                    timestamp = ts_match.group(1) if ts_match else 'N/A'
+                    
+                    # Keep latest attempt per client
+                    if name not in rejected or timestamp > rejected[name]['last_attempt']:
+                        # Extract IP
+                        ip_match = re.search(r'(\d+\.\d+\.\d+\.\d+):', line)
+                        real_ip = ip_match.group(1) if ip_match else 'N/A'
+                        
+                        rejected[name] = {
+                            'name': name,
+                            'real_ip': real_ip,
+                            'last_attempt': timestamp,
+                            'reason': 'Sin archivo CCD'
+                        }
+                        
+                        # Count attempts
+                        if 'attempts' in rejected.get(name, {}):
+                            rejected[name]['attempts'] += 1
+                        else:
+                            rejected[name]['attempts'] = 1
+        
+        # Count total attempts per client
+        for line in lines:
+            if 'client-config-dir authentication failed' in line:
+                match = re.search(r"common name '([^']+)'", line)
+                if match and match.group(1) in rejected:
+                    rejected[match.group(1)]['attempts'] = rejected.get(match.group(1), {}).get('attempts', 0) + 1
+        
+        # Divide by 2 because we counted twice (once in first loop, once in second)
+        for name in rejected:
+            rejected[name]['attempts'] = max(1, rejected[name]['attempts'] // 2)
+                        
+    except Exception as e:
+        print(f"Error getting rejected clients: {e}")
+    
+    return jsonify({'clients': list(rejected.values())})
+
+
 @app.route('/api/create', methods=['POST'])
 @login_required
 def create_client():

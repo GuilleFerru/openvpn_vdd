@@ -332,7 +332,33 @@ async function loadConnected() {
     loadClients();
 }
 
+// Load rejected clients
+async function loadRejected() {
+    const r = await fetch('/api/rejected');
+    const d = await r.json();
+    
+    const tbody = document.getElementById('rejectedList');
+    const card = document.getElementById('rejectedCard');
+    
+    if (d.clients.length === 0) {
+        card.style.display = 'none';
+    } else {
+        card.style.display = 'block';
+        tbody.innerHTML = d.clients.map(c => `
+            <tr style="background: rgba(255,77,77,0.1);">
+                <td><strong style="color:#ff6b6b;">${c.name}</strong></td>
+                <td style="font-family:monospace;color:#888">${c.real_ip}</td>
+                <td style="color:#888;font-size:12px">${c.last_attempt}</td>
+                <td><span class="badge" style="background:#ff4444;color:#fff;">${c.attempts}x</span></td>
+                <td style="color:#ff6b6b;font-size:12px">${c.reason}</td>
+            </tr>
+        `).join('');
+    }
+}
+
 // Initialize
 loadGroups();
 loadConnected();
+loadRejected();
 setInterval(loadConnected, 30000);
+setInterval(loadRejected, 30000);
