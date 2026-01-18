@@ -236,10 +236,23 @@ def index():
 def get_groups():
     db = load_clients_db()
     groups = db.get('groups', {})
-    # Add readable IP fields for UI
+    clients = db.get('clients', {})
+    
+    # Count actual clients per group
+    client_count = {}
+    for client_name, client_info in clients.items():
+        gid = client_info.get('group')
+        if gid:
+            # Verify .ovpn file exists
+            if os.path.exists(f'{CLIENTS_DIR}/{client_name}.ovpn'):
+                client_count[gid] = client_count.get(gid, 0) + 1
+    
+    # Add readable IP fields and real client count for UI
     for gid, g in groups.items():
         g['start_ip'] = ip_num_to_full(g['range_start'])
         g['end_ip'] = ip_num_to_full(g['range_end'])
+        g['client_count'] = client_count.get(gid, 0)
+    
     return jsonify({'groups': groups})
 
 

@@ -203,7 +203,7 @@ async function loadGroups() {
     } else {
         let html = '';
         for (const [id, g] of sortedGroups) {
-            const used = (g.next_ip || g.range_start) - g.range_start;
+            const used = g.client_count || 0;
             const total = g.range_end - g.range_start + 1;
             const isAdmin = g.is_system || g.can_see_all;
             
@@ -229,7 +229,7 @@ async function loadGroups() {
     
     select.innerHTML = '<option value="">-- Seleccionar grupo --</option>';
     for (const [id, g] of sortedGroups) {
-        const used = (g.next_ip || g.range_start) - g.range_start;
+        const used = g.client_count || 0;
         const total = g.range_end - g.range_start + 1;
         const full = used >= total;
         select.innerHTML += `<option value="${id}" ${full ? 'disabled' : ''}>${g.icon} ${g.name} (${used}/${total})${full ? ' - LLENO' : ''}</option>`;
