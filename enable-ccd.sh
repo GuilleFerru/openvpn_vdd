@@ -9,9 +9,7 @@ VOLUME_NAME="openvpn_openvpn_data"
 
 echo "=== Configurando OpenVPN con CCD exclusivo ==="
 echo ""
-echo "Esto asegura:"
-echo "  1. Solo clientes con archivo CCD pueden conectarse"
-echo "  2. El pool dinámico excluye el rango de admin (10.8.0.4-15)"
+echo "Esto asegura que SOLO clientes con archivo CCD pueden conectarse"
 echo ""
 
 # Verificar si client-config-dir ya está habilitado
@@ -31,16 +29,8 @@ else
     echo "✅ ccd-exclusive habilitado - clientes sin CCD NO pueden conectarse"
 fi
 
-# Modificar ifconfig-pool para excluir rango admin (10.8.0.4-15)
-# Solo como segunda barrera de seguridad
-if docker run -v $VOLUME_NAME:/etc/openvpn --rm kylemanna/openvpn cat /etc/openvpn/openvpn.conf | grep -q "ifconfig-pool 10.8.0.16"; then
-    echo "✓ ifconfig-pool ya excluye rango admin"
-else
-    # Eliminar cualquier ifconfig-pool existente y agregar el correcto
-    docker run -v $VOLUME_NAME:/etc/openvpn --rm kylemanna/openvpn sh -c 'sed -i "/^ifconfig-pool/d" /etc/openvpn/openvpn.conf'
-    docker run -v $VOLUME_NAME:/etc/openvpn --rm kylemanna/openvpn sh -c 'echo "ifconfig-pool 10.8.0.16 10.8.15.254" >> /etc/openvpn/openvpn.conf'
-    echo "✅ ifconfig-pool configurado: 10.8.0.16 - 10.8.15.254 (excluye rango admin)"
-fi
+# NOTA: No usamos ifconfig-pool explícito porque --server ya lo define implícitamente
+# La protección real viene de ccd-exclusive: sin archivo CCD = sin conexión
 
 # Crear directorio ccd local si no existe
 mkdir -p ./ccd
@@ -54,7 +44,6 @@ echo "=== Configuración completada ==="
 echo ""
 echo "✅ CCD exclusivo habilitado"
 echo "✅ Clientes sin archivo CCD NO pueden conectarse"
-echo "✅ Pool dinámico excluye rango admin (10.8.0.4-15)"
 echo ""
 echo "NOTA: Subred 10.8.0.0/20 - 340 grupos x 12 clientes"
 echo ""
