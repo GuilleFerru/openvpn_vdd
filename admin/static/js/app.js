@@ -77,7 +77,7 @@ document.getElementById('editGroupForm').onsubmit = async (e) => {
     
     if (d.success) {
         hideModal('modalEditGroup');
-        loadGroups();
+        location.reload();
     } else {
         alert('Error: ' + d.error);
     }
@@ -106,7 +106,7 @@ document.getElementById('createGroupForm').onsubmit = async (e) => {
     if (d.success) {
         hideModal('modalCreateGroup');
         document.getElementById('groupName').value = '';
-        loadGroups();
+        location.reload();
     } else {
         alert('Error: ' + d.error);
     }
@@ -138,10 +138,9 @@ document.getElementById('createForm').onsubmit = async (e) => {
     
     if (d.success) {
         status.className = 'status success';
-        status.innerHTML = `✅ Cliente creado! IP: <strong>${d.ip}</strong> &nbsp; <a href="/download/${d.name}" style="color:#00d4ff;font-weight:bold;">📥 Descargar .ovpn</a>`;
+        status.innerHTML = `✅ Cliente creado! IP: <strong>${d.ip}</strong> &nbsp; <a href="/download/${d.name}" style="color:#00d4ff;font-weight:bold;">📥 Descargar .ovpn</a> <span style="color:#888;font-size:12px;">(recargando en 3s...)</span>`;
         document.getElementById('clientName').value = '';
-        loadClients();
-        loadGroups();
+        setTimeout(() => location.reload(), 3000);
     } else {
         status.className = 'status error';
         status.textContent = '❌ ' + d.error;
@@ -175,10 +174,9 @@ document.getElementById('revokeForm').onsubmit = async (e) => {
     
     if (d.success) {
         status.className = 'status success';
-        status.textContent = '✅ Cliente revocado correctamente';
+        status.textContent = '✅ Cliente revocado correctamente (recargando...)';
         document.getElementById('revokeClientName').value = '';
-        loadClients();
-        loadGroups();
+        setTimeout(() => location.reload(), 1500);
     } else {
         status.className = 'status error';
         status.textContent = '❌ ' + d.error;
