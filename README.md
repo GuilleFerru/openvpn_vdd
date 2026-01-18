@@ -5,9 +5,9 @@ Servidor OpenVPN usando `kylemanna/openvpn`. Sin límite de conexiones simultán
 ## Características
 
 - ✅ Panel web de administración
-- ✅ Dos tipos de clientes: **Usuario** y **Gateway**
-- ✅ Gateways con IP fija (10.8.0.100+) y aislados entre sí
-- ✅ Usuarios pueden acceder a todos los gateways
+- ✅ Sistema de grupos aislados (cada cliente solo ve su grupo)
+- ✅ Grupo Admin puede ver todos los clientes
+- ✅ Subred /20 con capacidad para **340 grupos x 12 clientes = 4080 clientes**
 - ✅ Ver clientes conectados en tiempo real
 
 ## Requisitos
@@ -73,12 +73,17 @@ docker compose up -d --build
 http://<IP_SERVIDOR>:8888
 ```
 
-## Tipos de clientes
+## Sistema de Grupos
 
-| Tipo | Rango IP | Puede ver otros | Uso |
-|------|----------|-----------------|-----|
-| 👤 Usuario | 10.8.0.2-99 | Sí, todos | Personal técnico |
-| 📡 Gateway | 10.8.0.100-254 | Solo servidor | IoT/ChirpStack |
+| Grupo | Rango IP | Puede ver | Capacidad |
+|-------|----------|-----------|----------|
+| 🔑 Admin | 10.8.0.4 - 10.8.0.15 | Todo | 12 clientes |
+| 🏢 Grupo 1 | 10.8.0.16 - 10.8.0.27 | Solo su grupo | 12 clientes |
+| 🏢 Grupo 2 | 10.8.0.28 - 10.8.0.39 | Solo su grupo | 12 clientes |
+| ... | ... | ... | ... |
+| 🏢 Grupo 340 | 10.8.15.244 - 10.8.15.255 | Solo su grupo | 12 clientes |
+
+**Total:** 340 grupos × 12 clientes = **4080 clientes**
 
 ## Comandos CLI (alternativa al panel web)
 

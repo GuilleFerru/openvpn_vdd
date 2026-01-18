@@ -41,9 +41,10 @@ docker compose down 2>/dev/null || true
 echo "Creando volumen de datos..."
 docker volume create $VOLUME_NAME 2>/dev/null || true
 
-# Generar configuración del servidor
+# Generar configuración del servidor con subred /20 (4096 IPs para 340 grupos)
 echo "Generando configuración del servidor..."
-docker run -v $VOLUME_NAME:/etc/openvpn --rm kylemanna/openvpn ovpn_genconfig -u udp://$SERVER_ADDR
+echo "Subred: 10.8.0.0/20 (340 grupos x 12 clientes)"
+docker run -v $VOLUME_NAME:/etc/openvpn --rm kylemanna/openvpn ovpn_genconfig -u udp://$SERVER_ADDR -s 10.8.0.0/20 -p "route 10.8.0.0 255.255.240.0"
 
 # Inicializar PKI (esto pedirá contraseña para la CA)
 echo ""
