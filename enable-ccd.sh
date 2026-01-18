@@ -25,6 +25,6 @@ echo "Reiniciando OpenVPN..."
 docker compose restart openvpn
 
 echo ""
-echo "✅ Listo! Los gateways ahora recibirán IPs fijas en el rango 192.168.255.100-200"
+echo "✅ Listo! Los clientes ahora recibirán IPs fijas"
 echo ""
-echo "NOTA: Tu servidor usa la subred 192.168.255.0/24"
+echo "NOTA: Subred 10.8.0.0/20 - 340 grupos x 12 clientes"
