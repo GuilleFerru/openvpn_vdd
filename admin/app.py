@@ -223,6 +223,8 @@ HTML_TEMPLATE = '''
         .btn-danger { background: linear-gradient(135deg, #e94560, #c73e54); color: #fff; }
         .btn-secondary { background: #444; color: #fff; }
         .btn-small { width: auto; padding: 8px 16px; font-size: 13px; display: inline-block; margin: 3px; }
+        .btn-edit { background: transparent; border: none; cursor: pointer; font-size: 14px; padding: 2px 6px; margin-left: 8px; opacity: 0.6; transition: opacity 0.2s; }
+        .btn-edit:hover { opacity: 1; transform: none; }
         
         table { width: 100%; border-collapse: collapse; margin-top: 15px; }
         th, td { padding: 12px; text-align: left; border-bottom: 1px solid #0f3460; }
@@ -373,21 +375,101 @@ HTML_TEMPLATE = '''
         </div>
     </div>
 
+    <!-- Modal Editar Grupo -->
+    <div id="modalEditGroup" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>✏️ Editar Grupo</h2>
+                <button class="modal-close" onclick="hideModal('modalEditGroup')">&times;</button>
+            </div>
+            <form id="editGroupForm">
+                <input type="hidden" id="editGroupId">
+                <label class="info-text">Nombre del grupo:</label>
+                <input type="text" id="editGroupName" placeholder="Nombre del grupo" required>
+                
+                <label class="info-text">Icono:</label>
+                <div class="icon-picker" id="editIconPicker">
+                    <span class="icon-option" data-icon="🏢">🏢</span>
+                    <span class="icon-option" data-icon="🏭">🏭</span>
+                    <span class="icon-option" data-icon="🏬">🏬</span>
+                    <span class="icon-option" data-icon="🏪">🏪</span>
+                    <span class="icon-option" data-icon="🏥">🏥</span>
+                    <span class="icon-option" data-icon="🏫">🏫</span>
+                    <span class="icon-option" data-icon="🏨">🏨</span>
+                    <span class="icon-option" data-icon="🏦">🏦</span>
+                    <span class="icon-option" data-icon="⚡">⚡</span>
+                    <span class="icon-option" data-icon="🌐">🌐</span>
+                    <span class="icon-option" data-icon="🔧">🔧</span>
+                    <span class="icon-option" data-icon="📡">📡</span>
+                </div>
+                
+                <button type="submit">Guardar Cambios</button>
+            </form>
+        </div>
+    </div>
+
     <script>
         let groups = {};
         let connectedClients = [];
         let selectedIcon = '🏢';
+        let editSelectedIcon = '🏢';
 
-        document.querySelectorAll('.icon-option').forEach(opt => {
+        document.querySelectorAll('#iconPicker .icon-option').forEach(opt => {
             opt.onclick = () => {
-                document.querySelectorAll('.icon-option').forEach(o => o.classList.remove('selected'));
+                document.querySelectorAll('#iconPicker .icon-option').forEach(o => o.classList.remove('selected'));
                 opt.classList.add('selected');
                 selectedIcon = opt.dataset.icon;
             };
         });
 
+        document.querySelectorAll('#editIconPicker .icon-option').forEach(opt => {
+            opt.onclick = () => {
+                document.querySelectorAll('#editIconPicker .icon-option').forEach(o => o.classList.remove('selected'));
+                opt.classList.add('selected');
+                editSelectedIcon = opt.dataset.icon;
+            };
+        });
+
         function showModal(id) { document.getElementById(id).style.display = 'flex'; }
         function hideModal(id) { document.getElementById(id).style.display = 'none'; }
+
+        function showEditGroupModal(groupId, name, icon) {
+            document.getElementById('editGroupId').value = groupId;
+            document.getElementById('editGroupName').value = name;
+            editSelectedIcon = icon;
+            document.querySelectorAll('#editIconPicker .icon-option').forEach(o => {
+                o.classList.toggle('selected', o.dataset.icon === icon);
+            });
+            showModal('modalEditGroup');
+        }
+
+        document.getElementById('editGroupForm').onsubmit = async (e) => {
+            e.preventDefault();
+            const btn = e.target.querySelector('button');
+            btn.disabled = true;
+            btn.textContent = 'Guardando...';
+            
+            const groupId = document.getElementById('editGroupId').value;
+            const r = await fetch('/api/groups/' + groupId, {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    name: document.getElementById('editGroupName').value,
+                    icon: editSelectedIcon
+                })
+            });
+            const d = await r.json();
+            
+            btn.disabled = false;
+            btn.textContent = 'Guardar Cambios';
+            
+            if (d.success) {
+                hideModal('modalEditGroup');
+                loadGroups();
+            } else {
+                alert('Error: ' + d.error);
+            }
+        };
 
         async function showCreateGroupModal() {
             showModal('modalCreateGroup');
@@ -530,6 +612,7 @@ HTML_TEMPLATE = '''
                                     <span class="group-icon">${g.icon}</span>
                                     <span class="group-name">${g.name}</span>
                                     ${isAdmin ? '<span class="badge badge-admin" style="margin-left:10px;">VE TODO</span>' : ''}
+                                    ${!isAdmin ? `<button class="btn-edit" onclick="showEditGroupModal('${id}', '${g.name}', '${g.icon}')">✏️</button>` : ''}
                                 </div>
                                 <div style="text-align:right;">
                                     <div><strong>${used}</strong> / ${total}</div>
@@ -730,6 +813,34 @@ def create_group():
     start_ip = ip_num_to_full(next_start)
     end_ip = ip_num_to_full(next_end)
     return jsonify({'success': True, 'group_id': group_id, 'range_start': next_start, 'range_end': next_end, 'start_ip': start_ip, 'end_ip': end_ip})
+
+@app.route('/api/groups/<group_id>', methods=['PUT'])
+@login_required
+def update_group(group_id):
+    data = request.json
+    name = data.get('name', '').strip()
+    icon = data.get('icon', '🏢')
+    
+    if not name:
+        return jsonify({'success': False, 'error': 'Nombre requerido'})
+    
+    if len(name) > 50:
+        return jsonify({'success': False, 'error': 'Nombre muy largo (máx 50 caracteres)'})
+    
+    db = load_clients_db()
+    
+    if group_id not in db['groups']:
+        return jsonify({'success': False, 'error': 'Grupo no encontrado'})
+    
+    # No permitir editar grupo admin
+    if db['groups'][group_id].get('is_system') or db['groups'][group_id].get('can_see_all'):
+        return jsonify({'success': False, 'error': 'No se puede editar el grupo de administradores'})
+    
+    db['groups'][group_id]['name'] = name
+    db['groups'][group_id]['icon'] = icon
+    save_clients_db(db)
+    
+    return jsonify({'success': True})
 
 @app.route('/api/next-group-range', methods=['GET'])
 @login_required
