@@ -150,7 +150,7 @@ document.getElementById('createForm').onsubmit = async (e) => {
 // Revoke client form
 document.getElementById('revokeForm').onsubmit = async (e) => {
     e.preventDefault();
-    if (!confirm('¿Revocar este cliente? Esta acción es IRREVERSIBLE.')) return;
+    if (!confirm('¿Revocar este cliente? Esta acción es IRREVERSIBLE.\n\n⚠️ OpenVPN se reiniciará y las conexiones activas se desconectarán momentáneamente.')) return;
     
     const status = document.getElementById('revokeStatus');
     const btn = e.target.querySelector('button[type="submit"]');
