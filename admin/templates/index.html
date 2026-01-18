@@ -109,12 +109,12 @@
     <div class="card">
         <div class="collapsible-header" onclick="toggleSection('clientsSection')">
             <div style="display:flex; align-items:center; gap:10px;">
-                <span class="collapse-icon collapsed" id="clientsSection-icon">▼</span>
+                <span class="collapse-icon" id="clientsSection-icon">▼</span>
                 <h2>📋 Clientes por Grupo <span id="clientsCount" class="count-badge"></span></h2>
             </div>
             <button class="btn-small btn-secondary" id="btnRefreshClients" onclick="event.stopPropagation(); loadClients()">🔄</button>
         </div>
-        <div class="collapsible-content collapsed" id="clientsSection">
+        <div class="collapsible-content" id="clientsSection">
             <div id="clientsByGroup"></div>
         </div>
     </div>
