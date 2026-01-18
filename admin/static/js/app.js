@@ -311,11 +311,14 @@ async function loadConnected() {
             const grpBadge = c.group_name 
                 ? `<span class="badge badge-group">${c.group_icon} ${c.group_name}</span>`
                 : '<span style="color:#666">-</span>';
+            const vpnIpLink = c.vpn_ip && c.vpn_ip !== 'Dinámica' 
+                ? `<a href="http://${c.vpn_ip}" target="_blank" style="color:#00d4ff;text-decoration:none;" title="Abrir en nueva pestaña">${c.vpn_ip}</a>`
+                : c.vpn_ip;
             return `
                 <tr>
                     <td><strong>${c.name}</strong></td>
                     <td>${grpBadge}</td>
-                    <td style="font-family:monospace">${c.vpn_ip}</td>
+                    <td style="font-family:monospace">${vpnIpLink}</td>
                     <td style="font-family:monospace;color:#888">${c.real_ip}</td>
                     <td style="color:#888;font-size:12px">${c.connected_since}</td>
                     <td style="font-size:12px">↓${c.bytes_recv} ↑${c.bytes_sent}</td>
