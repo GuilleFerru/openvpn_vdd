@@ -14,48 +14,57 @@
 
     <!-- Connected Clients -->
     <div class="card">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-            <h2>📡 Clientes Conectados</h2>
-            <button class="btn-small btn-secondary" id="btnRefreshConnected" onclick="loadConnected()">🔄</button>
+        <div class="collapsible-header" onclick="toggleSection('connectedSection')">
+            <div style="display:flex; align-items:center; gap:10px;">
+                <span class="collapse-icon" id="connectedSection-icon">▼</span>
+                <h2>📡 Clientes Conectados <span id="connectedCount" class="count-badge"></span></h2>
+            </div>
+            <button class="btn-small btn-secondary" id="btnRefreshConnected" onclick="event.stopPropagation(); loadConnected()">🔄</button>
         </div>
-        <table>
-            <thead>
-                <tr>
-                    <th>Cliente</th>
-                    <th>Grupo</th>
-                    <th>IP VPN</th>
-                    <th>IP Real</th>
-                    <th>Conectado</th>
-                    <th>Tráfico</th>
-                </tr>
-            </thead>
-            <tbody id="connectedList">
-                <tr><td colspan="6" style="color:#666">Cargando...</td></tr>
-            </tbody>
-        </table>
+        <div class="collapsible-content" id="connectedSection">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Cliente</th>
+                        <th>Grupo</th>
+                        <th>IP VPN</th>
+                        <th>IP Real</th>
+                        <th>Conectado</th>
+                        <th>Tráfico</th>
+                    </tr>
+                </thead>
+                <tbody id="connectedList">
+                    <tr><td colspan="6" style="color:#666">Cargando...</td></tr>
+                </tbody>
+            </table>
+        </div>
     </div>
 
     <!-- Rejected Clients -->
     <div class="card" id="rejectedCard" style="display:none;">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-            <h2>🚫 Clientes Rechazados</h2>
-            <button class="btn-small btn-secondary" onclick="loadRejected()">🔄</button>
+        <div class="collapsible-header" onclick="toggleSection('rejectedSection')">
+            <div style="display:flex; align-items:center; gap:10px;">
+                <span class="collapse-icon" id="rejectedSection-icon">▼</span>
+                <h2>🚫 Clientes Rechazados <span id="rejectedCount" class="count-badge count-danger"></span></h2>
+            </div>
+            <button class="btn-small btn-secondary" onclick="event.stopPropagation(); loadRejected()">🔄</button>
         </div>
-        <p class="info-text">Clientes que intentaron conectarse pero fueron bloqueados (sin archivo CCD válido)</p>
-        <table>
-            <thead>
-                <tr>
-                    <th>Cliente</th>
-                    <th>IP Real</th>
-                    <th>Último Intento</th>
-                    <th>Intentos</th>
-                    <th>Motivo</th>
-                </tr>
-            </thead>
-            <tbody id="rejectedList">
-                <tr><td colspan="5" style="color:#666">Cargando...</td></tr>
-            </tbody>
-        </table>
+        <div class="collapsible-content" id="rejectedSection">
+            <p class="info-text">Clientes bloqueados por no tener archivo CCD válido (revocados o inexistentes)</p>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Cliente</th>
+                        <th>IP Real</th>
+                        <th>Último Intento</th>
+                        <th>Motivo</th>
+                    </tr>
+                </thead>
+                <tbody id="rejectedList">
+                    <tr><td colspan="4" style="color:#666">Cargando...</td></tr>
+                </tbody>
+            </table>
+        </div>
     </div>
 
     <!-- Grid: Groups + Create/Revoke -->
@@ -98,11 +107,16 @@
 
     <!-- Clients by Group -->
     <div class="card">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-            <h2>📋 Clientes por Grupo</h2>
-            <button class="btn-small btn-secondary" id="btnRefreshClients" onclick="loadClients()">🔄</button>
+        <div class="collapsible-header" onclick="toggleSection('clientsSection')">
+            <div style="display:flex; align-items:center; gap:10px;">
+                <span class="collapse-icon" id="clientsSection-icon">▼</span>
+                <h2>📋 Clientes por Grupo <span id="clientsCount" class="count-badge"></span></h2>
+            </div>
+            <button class="btn-small btn-secondary" id="btnRefreshClients" onclick="event.stopPropagation(); loadClients()">🔄</button>
         </div>
-        <div id="clientsByGroup"></div>
+        <div class="collapsible-content" id="clientsSection">
+            <div id="clientsByGroup"></div>
+        </div>
     </div>
 
     <!-- Modal: Create Group -->
@@ -175,5 +189,11 @@
     </div>
 
     <script src="/static/js/app.js"></script>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="footer-main">© 2026 <strong>WeDo IoT Solutions</strong></div>
+        <div class="footer-sub">Desarrollado por Guillermo Ferrucci</div>
+    </footer>
 </body>
 </html>

@@ -5,6 +5,22 @@ let connectedClients = [];
 let selectedIcon = '🏢';
 let editSelectedIcon = '🏢';
 
+// Toggle collapsible sections
+function toggleSection(sectionId) {
+    const section = document.getElementById(sectionId);
+    const icon = document.getElementById(sectionId + '-icon');
+    section.classList.toggle('collapsed');
+    icon.classList.toggle('collapsed');
+}
+
+// Toggle group in clients list
+function toggleGroup(groupId) {
+    const content = document.getElementById('group-content-' + groupId);
+    const icon = document.getElementById('group-icon-' + groupId);
+    content.classList.toggle('collapsed');
+    icon.classList.toggle('collapsed');
+}
+
 // Icon picker handlers
 document.querySelectorAll('#iconPicker .icon-option').forEach(opt => {
     opt.onclick = () => {
@@ -245,6 +261,9 @@ async function loadClients() {
     const r = await fetch('/api/clients');
     const d = await r.json();
     
+    // Update count badge
+    document.getElementById('clientsCount').textContent = d.clients.length;
+    
     const byGroup = {};
     for (const c of d.clients) {
         const gid = c.group || 'sin-grupo';
@@ -262,10 +281,23 @@ async function loadClients() {
     
     for (const [gid, g] of sortedGroups) {
         const clients = byGroup[gid] || [];
-        html += `<h3>${g.icon} ${g.name}</h3>`;
+        const onlineCount = clients.filter(c => connectedClients.includes(c.name)).length;
+        
+        html += `
+            <div class="group-header-collapsible" onclick="toggleGroup('${gid}')">
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <span class="collapse-icon" id="group-icon-${gid}">▼</span>
+                    <span style="font-size:20px;">${g.icon}</span>
+                    <strong style="color:#ffd700;">${g.name}</strong>
+                    <span class="count-badge">${clients.length}</span>
+                    ${onlineCount > 0 ? `<span class="badge badge-online">${onlineCount} online</span>` : ''}
+                </div>
+            </div>
+            <div class="group-clients" id="group-content-${gid}">
+        `;
         
         if (clients.length === 0) {
-            html += '<p style="color:#555;font-size:13px;margin-left:10px;">Sin clientes</p>';
+            html += '<p style="color:#555;font-size:13px;margin-left:10px;padding:10px;">Sin clientes</p>';
         } else {
             for (const c of clients) {
                 const isOnline = connectedClients.includes(c.name);
@@ -285,6 +317,7 @@ async function loadClients() {
                 `;
             }
         }
+        html += '</div>';
     }
     
     document.getElementById('clientsByGroup').innerHTML = html || '<div class="empty-state"><div class="icon">👥</div><p>No hay clientes</p></div>';
@@ -303,6 +336,9 @@ async function loadConnected() {
     connectedClients = d.clients.map(c => c.name);
     
     const tbody = document.getElementById('connectedList');
+    
+    // Update count badge
+    document.getElementById('connectedCount').textContent = d.clients.length;
     
     if (d.clients.length === 0) {
         tbody.innerHTML = '<tr><td colspan="6" style="color:#555;text-align:center;">Sin conexiones activas</td></tr>';
@@ -344,12 +380,13 @@ async function loadRejected() {
         card.style.display = 'none';
     } else {
         card.style.display = 'block';
+        // Update count badge
+        document.getElementById('rejectedCount').textContent = d.clients.length;
         tbody.innerHTML = d.clients.map(c => `
             <tr style="background: rgba(255,77,77,0.1);">
                 <td><strong style="color:#ff6b6b;">${c.name}</strong></td>
                 <td style="font-family:monospace;color:#888">${c.real_ip}</td>
                 <td style="color:#888;font-size:12px">${c.last_attempt}</td>
-                <td><span class="badge" style="background:#ff4444;color:#fff;">${c.attempts}x</span></td>
                 <td style="color:#ff6b6b;font-size:12px">${c.reason}</td>
             </tr>
         `).join('');

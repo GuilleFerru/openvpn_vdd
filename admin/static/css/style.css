@@ -240,3 +240,87 @@ body.login-page {
 .login-box input { margin: 10px 0; }
 .login-box button { margin-top: 20px; }
 .login-error { color: #e94560; margin-top: 15px; }
+
+/* Collapsible sections */
+.collapsible-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    padding: 5px 0;
+    margin-bottom: 10px;
+    transition: opacity 0.2s;
+}
+.collapsible-header:hover { opacity: 0.8; }
+.collapsible-header h2 { margin: 0; display: flex; align-items: center; gap: 8px; }
+.collapse-icon {
+    font-size: 12px;
+    color: #888;
+    transition: transform 0.3s;
+    display: inline-block;
+}
+.collapse-icon.collapsed { transform: rotate(-90deg); }
+.collapsible-content {
+    overflow: hidden;
+    transition: max-height 0.3s ease-out, opacity 0.3s;
+}
+.collapsible-content.collapsed {
+    max-height: 0 !important;
+    opacity: 0;
+    padding: 0;
+    margin: 0;
+}
+.count-badge {
+    background: #0f3460;
+    color: #4ecca3;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: normal;
+}
+.count-badge.count-danger {
+    background: rgba(233,69,96,0.2);
+    color: #e94560;
+}
+
+/* Collapsible groups in clients section */
+.group-header-collapsible {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    padding: 8px 12px;
+    background: rgba(15, 52, 96, 0.5);
+    border-radius: 8px;
+    margin: 10px 0 5px 0;
+    transition: background 0.2s;
+}
+.group-header-collapsible:hover { background: rgba(15, 52, 96, 0.8); }
+.group-clients {
+    overflow: hidden;
+    transition: max-height 0.3s ease-out;
+}
+.group-clients.collapsed {
+    max-height: 0 !important;
+}
+
+/* Footer */
+.footer {
+    text-align: center;
+    padding: 30px 20px;
+    margin-top: 40px;
+    border-top: 1px solid #0f3460;
+    color: #666;
+}
+.footer-main {
+    font-size: 14px;
+    color: #888;
+    margin-bottom: 5px;
+}
+.footer-main strong {
+    color: #00d4ff;
+}
+.footer-sub {
+    font-size: 11px;
+    color: #555;
+}

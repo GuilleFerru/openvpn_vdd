@@ -401,6 +401,19 @@ def connected_clients():
     clients = []
     db = load_clients_db()
     
+    # First, get list of rejected clients to filter them out
+    rejected_names = set()
+    try:
+        cmd = 'docker logs openvpn --tail 200 2>&1'
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=10)
+        for line in result.stdout.split('\n'):
+            if 'client-config-dir authentication failed' in line and 'common name' in line:
+                match = re.search(r"common name '([^']+)'", line)
+                if match:
+                    rejected_names.add(match.group(1))
+    except:
+        pass
+    
     try:
         cmd = 'docker exec openvpn cat /tmp/openvpn-status.log 2>/dev/null || echo ""'
         result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=10)
@@ -417,6 +430,11 @@ def connected_clients():
                 parts = line.split(',')
                 if len(parts) >= 4 and parts[0] != 'UNDEF':
                     name = parts[0]
+                    
+                    # Skip rejected clients - they appear briefly during failed auth
+                    if name in rejected_names:
+                        continue
+                    
                     info = db.get('clients', {}).get(name, {})
                     gid = info.get('group')
                     grp = db.get('groups', {}).get(gid, {}) if gid else {}
