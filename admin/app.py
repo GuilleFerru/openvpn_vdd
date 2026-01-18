@@ -521,6 +521,9 @@ def create_client():
         result = subprocess.run(cmd2, shell=True, capture_output=True, timeout=30)
         
         if result.returncode != 0:
+            # Cleanup CCD on failure
+            if os.path.exists(f'{CCD_DIR}/{name}'):
+                os.remove(f'{CCD_DIR}/{name}')
             return jsonify({'success': False, 'error': 'Error exportando configuración'})
         
         os.makedirs(CLIENTS_DIR, exist_ok=True)
@@ -541,8 +544,14 @@ def create_client():
         return jsonify({'success': True, 'name': name, 'ip': assigned_ip, 'group': group_id})
         
     except subprocess.TimeoutExpired:
+        # Cleanup CCD on timeout
+        if os.path.exists(f'{CCD_DIR}/{name}'):
+            os.remove(f'{CCD_DIR}/{name}')
         return jsonify({'success': False, 'error': 'Timeout - operación tardó demasiado'})
     except Exception as e:
+        # Cleanup CCD on any error
+        if os.path.exists(f'{CCD_DIR}/{name}'):
+            os.remove(f'{CCD_DIR}/{name}')
         return jsonify({'success': False, 'error': str(e)})
 
 
