@@ -5,20 +5,89 @@ let connectedClients = [];
 let selectedIcon = '🏢';
 let editSelectedIcon = '🏢';
 
-// Toggle collapsible sections
+// ============================================
+// Collapsible sections with localStorage persistence
+// ============================================
+
+// Save section state to localStorage
+function saveSectionState(sectionId, isCollapsed) {
+    const states = JSON.parse(localStorage.getItem('sectionStates') || '{}');
+    states[sectionId] = isCollapsed;
+    localStorage.setItem('sectionStates', JSON.stringify(states));
+}
+
+// Get section state from localStorage
+function getSectionState(sectionId, defaultCollapsed = true) {
+    const states = JSON.parse(localStorage.getItem('sectionStates') || '{}');
+    if (states.hasOwnProperty(sectionId)) {
+        return states[sectionId];
+    }
+    return defaultCollapsed;
+}
+
+// Restore all section states on page load
+function restoreSectionStates() {
+    // Main sections with their defaults
+    const sections = [
+        { id: 'connectedSection', defaultCollapsed: true },
+        { id: 'rejectedSection', defaultCollapsed: true },
+        { id: 'clientsSection', defaultCollapsed: false }  // Clientes por Grupo expanded by default
+    ];
+    
+    sections.forEach(({ id, defaultCollapsed }) => {
+        const section = document.getElementById(id);
+        const icon = document.getElementById(id + '-icon');
+        if (section && icon) {
+            const shouldBeCollapsed = getSectionState(id, defaultCollapsed);
+            if (shouldBeCollapsed) {
+                section.classList.add('collapsed');
+                icon.classList.add('collapsed');
+            } else {
+                section.classList.remove('collapsed');
+                icon.classList.remove('collapsed');
+            }
+        }
+    });
+}
+
+// Toggle collapsible sections (with persistence)
 function toggleSection(sectionId) {
     const section = document.getElementById(sectionId);
     const icon = document.getElementById(sectionId + '-icon');
     section.classList.toggle('collapsed');
     icon.classList.toggle('collapsed');
+    
+    // Save state
+    saveSectionState(sectionId, section.classList.contains('collapsed'));
 }
 
-// Toggle group in clients list
+// Toggle group in clients list (with persistence)
 function toggleGroup(groupId) {
     const content = document.getElementById('group-content-' + groupId);
     const icon = document.getElementById('group-icon-' + groupId);
     content.classList.toggle('collapsed');
     icon.classList.toggle('collapsed');
+    
+    // Save state
+    saveSectionState('group-' + groupId, content.classList.contains('collapsed'));
+}
+
+// Restore group states after loading clients
+function restoreGroupStates() {
+    Object.keys(groups).forEach(gid => {
+        const content = document.getElementById('group-content-' + gid);
+        const icon = document.getElementById('group-icon-' + gid);
+        if (content && icon) {
+            const shouldBeCollapsed = getSectionState('group-' + gid, true); // Groups collapsed by default
+            if (shouldBeCollapsed) {
+                content.classList.add('collapsed');
+                icon.classList.add('collapsed');
+            } else {
+                content.classList.remove('collapsed');
+                icon.classList.remove('collapsed');
+            }
+        }
+    });
 }
 
 // Icon picker handlers
@@ -321,6 +390,10 @@ async function loadClients() {
     }
     
     document.getElementById('clientsByGroup').innerHTML = html || '<div class="empty-state"><div class="icon">👥</div><p>No hay clientes</p></div>';
+    
+    // Restore group collapsed states from localStorage
+    restoreGroupStates();
+    
     btn.innerHTML = '🔄';
     btn.disabled = false;
 }
@@ -394,6 +467,7 @@ async function loadRejected() {
 }
 
 // Initialize
+restoreSectionStates();  // Restore collapsed/expanded states from localStorage
 loadGroups();
 loadConnected();
 loadRejected();
