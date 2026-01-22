@@ -17,3 +17,37 @@ Thumbs.db
 *~
 .vscode/
 .idea/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+.env.local
+.env.*.local
+
+# CCD (configuraciones de clientes - contienen IPs asignadas)
+ccd/*
+!ccd/.gitkeep
+
+# Logs
+*.log
+logs/
+
+# Docker (archivos locales)
+docker-compose.override.yml
+
+# Archivos temporales
+*.tmp
+*.bak
+*.orig
+
+# Certificados y claves (nunca subir)
+*.key
+*.crt
+*.pem
+*.p12
+*.ovpn

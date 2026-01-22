@@ -25,32 +25,84 @@ CCD_DIR = "/app/ccd"
 CLIENTS_DB = "/app/clients/clients.json"
 ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin123')
 
-# Network configuration - Subnet /20: 10.8.0.0 - 10.8.15.255 (4096 IPs)
-VPN_SUBNET_BASE = "10.8"
-ADMIN_RANGE = {'start': 4, 'end': 15}  # 12 IPs for admins (10.8.0.4 - 10.8.0.15)
-GROUP_SIZE = 12  # Each group has 12 IPs
-FIRST_GROUP_START = 16  # First group starts at IP 16 (10.8.0.16)
-MAX_IP = 4095  # Last available IP (10.8.15.255)
+# =============================================================================
+# Network Configuration - Subnet /16: 10.8.0.0 - 10.8.255.255 (65,536 IPs)
+# =============================================================================
+# New IP scheme:
+#   - Admin:    Group 0  → 10.8.0.1 - 10.8.0.254 (254 admins)
+#   - Group 1:             10.8.1.1 - 10.8.1.254 (254 clients)
+#   - ...
+#   - Group 255:           10.8.255.1 - 10.8.255.254
+#
+# Formula: Group N → third_octet = N. (Second octet always 8)
+# =============================================================================
+
+VPN_SECOND_OCTET_START = 8
+VPN_SECOND_OCTET_END = 8     # Fixed at 8
+CLIENTS_PER_GROUP = 254      # Clients 1-254
+MAX_GROUPS = 255             # Groups 0-255
+ADMIN_GROUP_NUM = 0          # Admin uses 10.8.0.x
 
 
 # =============================================================================
-# IP Helper Functions
+# IP Helper Functions - New /16 Subnet Scheme
 # =============================================================================
 
-def ip_to_octets(ip_num):
-    """Convert IP number (0-4095) to last two octets"""
-    return ip_num // 256, ip_num % 256
+def group_id_to_octets(group_num):
+    """
+    Convert group number to (second_octet, third_octet).
+    Group 0 (Admin) → (8, 0)
+    Group 255 → (8, 255)
+    """
+    return VPN_SECOND_OCTET_START, group_num
 
 
-def octets_to_ip(third, fourth):
-    """Convert octets to full IP"""
-    return f"{VPN_SUBNET_BASE}.{third}.{fourth}"
+def octets_to_group_id(second_octet, third_octet):
+    """
+    Convert (second_octet, third_octet) back to group number.
+    (8, X) → X
+    """
+    if second_octet != VPN_SECOND_OCTET_START:
+        return 0  # Default to admin/0 if octet doesn't match
+    return third_octet
 
 
-def ip_num_to_full(ip_num):
-    """Convert number to full IP address"""
-    third, fourth = ip_to_octets(ip_num)
-    return octets_to_ip(third, fourth)
+def group_client_to_ip(group_num, client_num):
+    """
+    Convert group number and client number (1-254) to full IP.
+    Group 1, Client 47 → 10.8.1.47
+    """
+    return f"10.{VPN_SECOND_OCTET_START}.{group_num}.{client_num}"
+
+
+def ip_to_group_client(ip_str):
+    """
+    Parse IP string to (group_num, client_num).
+    '10.8.1.47' → (1, 47)
+    """
+    parts = ip_str.split('.')
+    if len(parts) != 4:
+        return None, None
+    try:
+        second = int(parts[1])
+        third = int(parts[2])
+        fourth = int(parts[3])
+        group_num = octets_to_group_id(second, third)
+        return group_num, fourth
+    except:
+        return None, None
+
+
+def get_group_ip_range(group_num):
+    """
+    Get the IP range for a group as (start_ip, end_ip).
+    Group 1 → ('10.8.1.1', '10.8.1.254')
+    """
+    second = VPN_SECOND_OCTET_START
+    third = group_num
+    start_ip = f"10.{second}.{third}.1"
+    end_ip = f"10.{second}.{third}.254"
+    return start_ip, end_ip
 
 
 def utc_to_argentina(utc_time_str):
@@ -93,21 +145,21 @@ def load_clients_db():
 
 
 def _create_default_db(existing_clients=None):
-    """Create default database structure"""
+    """Create default database structure with new /12 subnet scheme"""
+    start_ip, end_ip = get_group_ip_range(ADMIN_GROUP_NUM)
     return {
         'groups': {
             'admin': {
                 'name': 'Administradores',
                 'icon': '👑',
-                'range_start': ADMIN_RANGE['start'],
-                'range_end': ADMIN_RANGE['end'],
-                'next_ip': ADMIN_RANGE['start'],
+                'group_num': ADMIN_GROUP_NUM,  # Group 0 = 10.8.0.x
+                'next_client': 1,  # Next client number (1-254)
                 'can_see_all': True,
                 'is_system': True
             }
         },
         'clients': existing_clients or {},
-        'next_group_start': FIRST_GROUP_START
+        'next_group_num': 1  # Next group number to assign (1-2047)
     }
 
 
@@ -123,23 +175,33 @@ def save_clients_db(db):
 # =============================================================================
 
 def get_next_ip_for_group(group_id):
-    """Get next available IP for a group (doesn't increment counter)"""
+    """
+    Get next available IP for a group (doesn't increment counter).
+    Returns full IP string or None if group is full.
+    """
     db = load_clients_db()
     group = db['groups'].get(group_id)
     if not group:
         return None
-    ip = group.get('next_ip', group['range_start'])
-    if ip > group['range_end']:
+    
+    group_num = group.get('group_num', 0)
+    next_client = group.get('next_client', 1)
+    
+    if next_client > CLIENTS_PER_GROUP:  # > 254
         return None
-    return ip
+    
+    return group_client_to_ip(group_num, next_client)
 
 
-def confirm_ip_used(group_id, ip_octet):
-    """Confirm IP was used and update counter"""
+def confirm_ip_used(group_id, client_num):
+    """
+    Confirm client number was used and update counter.
+    client_num is the fourth octet (1-254).
+    """
     db = load_clients_db()
     group = db['groups'].get(group_id)
-    if group and ip_octet >= group.get('next_ip', group['range_start']):
-        db['groups'][group_id]['next_ip'] = ip_octet + 1
+    if group and client_num >= group.get('next_client', 1):
+        db['groups'][group_id]['next_client'] = client_num + 1
         save_clients_db(db)
 
 
@@ -178,13 +240,13 @@ def recalculate_group_counters():
                     except:
                         pass
     
-    # Update next_ip for each group based on highest used IP
+    # Update next_client for each group based on highest used client number
     for gid, group in db['groups'].items():
         if gid in group_clients and group_clients[gid]:
-            max_ip = max(group_clients[gid])
-            db['groups'][gid]['next_ip'] = max_ip + 1
+            max_client = max(group_clients[gid])
+            db['groups'][gid]['next_client'] = max_client + 1
         else:
-            db['groups'][gid]['next_ip'] = group['range_start']
+            db['groups'][gid]['next_client'] = 1
     
     save_clients_db(db)
     return {
@@ -273,8 +335,11 @@ def get_groups():
     
     # Add readable IP fields and real client count for UI
     for gid, g in groups.items():
-        g['start_ip'] = ip_num_to_full(g['range_start'])
-        g['end_ip'] = ip_num_to_full(g['range_end'])
+        group_num = g.get('group_num', 0)
+        start_ip, end_ip = get_group_ip_range(group_num)
+        g['start_ip'] = start_ip
+        g['end_ip'] = end_ip
+        g['capacity'] = CLIENTS_PER_GROUP
         g['client_count'] = client_count.get(gid, 0)
     
     return jsonify({'groups': groups})
@@ -304,34 +369,34 @@ def create_group():
     if group_id in db['groups']:
         return jsonify({'success': False, 'error': 'Ya existe un grupo con ese nombre'})
     
-    next_start = db.get('next_group_start', FIRST_GROUP_START)
-    next_end = next_start + GROUP_SIZE - 1
+    # Get next available group number (1-2047)
+    next_group_num = db.get('next_group_num', 1)
     
-    if next_end > MAX_IP:
-        return jsonify({'success': False, 'error': 'No hay más rangos de IP disponibles'})
+    if next_group_num > MAX_GROUPS:
+        return jsonify({'success': False, 'error': 'No hay más grupos disponibles (máx 255)'})
+    
+    # Calculate IP range for this group
+    start_ip, end_ip = get_group_ip_range(next_group_num)
     
     db['groups'][group_id] = {
         'name': name,
         'icon': icon,
-        'range_start': next_start,
-        'range_end': next_end,
-        'next_ip': next_start,
+        'group_num': next_group_num,
+        'next_client': 1,  # Start from client 1
         'can_see_all': False,
         'is_system': False
     }
     
-    db['next_group_start'] = next_start + GROUP_SIZE
+    db['next_group_num'] = next_group_num + 1
     save_clients_db(db)
     
-    start_ip = ip_num_to_full(next_start)
-    end_ip = ip_num_to_full(next_end)
     return jsonify({
         'success': True, 
         'group_id': group_id, 
-        'range_start': next_start, 
-        'range_end': next_end, 
+        'group_num': next_group_num,
         'start_ip': start_ip, 
-        'end_ip': end_ip
+        'end_ip': end_ip,
+        'capacity': CLIENTS_PER_GROUP
     })
 
 
@@ -367,23 +432,22 @@ def update_group(group_id):
 @app.route('/api/next-group-range', methods=['GET'])
 @login_required
 def get_next_group_range():
+    """Get info about the next available group."""
     db = load_clients_db()
-    next_start = db.get('next_group_start', FIRST_GROUP_START)
-    next_end = next_start + GROUP_SIZE - 1
+    next_group_num = db.get('next_group_num', 1)
     
-    if next_end > MAX_IP:
-        return jsonify({'available': False})
+    if next_group_num > MAX_GROUPS:
+        return jsonify({'available': False, 'reason': 'Máximo de grupos alcanzado (255)'})
     
-    start_ip = ip_num_to_full(next_start)
-    end_ip = ip_num_to_full(next_end)
+    start_ip, end_ip = get_group_ip_range(next_group_num)
     
     return jsonify({
         'available': True,
-        'start': next_start,
-        'end': next_end,
+        'group_num': next_group_num,
         'start_ip': start_ip,
         'end_ip': end_ip,
-        'capacity': GROUP_SIZE
+        'capacity': CLIENTS_PER_GROUP,
+        'remaining_groups': MAX_GROUPS - next_group_num + 1
     })
 
 
@@ -582,20 +646,24 @@ def create_client():
     if not group:
         return jsonify({'success': False, 'error': 'Grupo no existe'})
     
-    ip_num = get_next_ip_for_group(group_id)
-    if ip_num is None:
-        return jsonify({'success': False, 'error': 'Grupo lleno, no hay más IPs disponibles'})
+    # get_next_ip_for_group now returns full IP string like "10.8.1.47"
+    assigned_ip = get_next_ip_for_group(group_id)
+    if assigned_ip is None:
+        return jsonify({'success': False, 'error': 'Grupo lleno, no hay más IPs disponibles (máx 254 clientes)'})
     
-    assigned_ip = ip_num_to_full(ip_num)
+    # Extract client number (fourth octet) for peer calculation
+    _, client_num = ip_to_group_client(assigned_ip)
+    group_num = group.get('group_num', 0)
     
     try:
         # Create CCD file for static IP
+        # Peer IP calculation: if client is even, peer is +1; if odd, peer is -1
         os.makedirs(CCD_DIR, exist_ok=True)
-        if ip_num % 2 == 0:
-            peer_num = ip_num + 1
+        if client_num % 2 == 0:
+            peer_num = client_num + 1
         else:
-            peer_num = ip_num - 1
-        peer_ip = ip_num_to_full(peer_num)
+            peer_num = client_num - 1
+        peer_ip = group_client_to_ip(group_num, peer_num)
         
         with open(f'{CCD_DIR}/{name}', 'w') as f:
             f.write(f'ifconfig-push {assigned_ip} {peer_ip}\n')
@@ -631,8 +699,8 @@ def create_client():
         with open(f'{CLIENTS_DIR}/{name}.ovpn', 'wb') as f:
             f.write(result.stdout)
         
-        # Confirm IP was used (updates counter)
-        confirm_ip_used(group_id, ip_num)
+        # Confirm client number was used (updates counter)
+        confirm_ip_used(group_id, client_num)
         
         # Save to database
         db = load_clients_db()

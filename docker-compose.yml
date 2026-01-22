@@ -10,52 +10,38 @@ services:
     volumes:
       - openvpn_openvpn_data:/etc/openvpn
       - ./ccd:/etc/openvpn/ccd
-    # Reglas iptables para aislamiento entre grupos:
-    # Subred: 10.8.0.0/20 (4096 IPs: 10.8.0.0 - 10.8.15.255)
-    # - Admin (10.8.0.4 - 10.8.0.15): puede ver todo - 12 IPs
-    # - Grupos: 340 grupos x 12 IPs cada uno (desde 10.8.0.16)
-    # - Cada grupo solo puede ver miembros de su mismo grupo
+    # ==========================================================================
+    # Reglas iptables para aislamiento entre grupos - Subred /16
+    # ==========================================================================
+    # Subred: 10.8.0.0/16
+    # - Admin (10.8.0.x): puede ver todo
+    # - Grupos N (10.8.N.x): cada uno es un /24 aislado (1-255)
+    # ==========================================================================
     command: >
       sh -c "
-        echo 'Configurando reglas de aislamiento VPN...';
+        echo '=== Configurando reglas de aislamiento VPN (Subred /16) ===';
         
-        # Admin (10.8.0.4 - 10.8.0.15) puede comunicarse con todos
-        iptables -A FORWARD -m iprange --src-range 10.8.0.4-10.8.0.15 -j ACCEPT;
-        iptables -A FORWARD -m iprange --dst-range 10.8.0.4-10.8.0.15 -j ACCEPT;
+        # Admin (10.8.0.0/24) puede comunicarse con todos
+        iptables -A FORWARD -s 10.8.0.0/24 -j ACCEPT;
+        iptables -A FORWARD -d 10.8.0.0/24 -j ACCEPT;
         
-        # Generar reglas para cada grupo de 12 IPs
-        # Grupos van desde IP 16 hasta IP 4095 (10.8.0.16 - 10.8.15.255)
-        # Cada grupo de 12 IPs puede comunicarse internamente
-        IP_NUM=16;
-        GROUP_SIZE=12;
-        MAX_IP=4095;
+        echo 'Admin (10.8.0.0/24) puede ver todo';
+        
+        # Generar reglas para cada grupo (1-255)
+        # Cada grupo es 10.8.N.0/24
+        
         GROUP_COUNT=0;
-        while [ \$${IP_NUM} -le \$$((MAX_IP - GROUP_SIZE + 1)) ]; do
-          START_NUM=\$${IP_NUM};
-          END_NUM=\$$((IP_NUM + GROUP_SIZE - 1));
-          
-          # Convertir numeros a IPs (10.8.X.Y)
-          START_THIRD=\$$((START_NUM / 256));
-          START_FOURTH=\$$((START_NUM % 256));
-          END_THIRD=\$$((END_NUM / 256));
-          END_FOURTH=\$$((END_NUM % 256));
-          
-          START_IP=\"10.8.\$${START_THIRD}.\$${START_FOURTH}\";
-          END_IP=\"10.8.\$${END_THIRD}.\$${END_FOURTH}\";
-          
-          # Permitir trafico dentro del grupo
-          iptables -A FORWARD -m iprange --src-range \$${START_IP}-\$${END_IP} -m iprange --dst-range \$${START_IP}-\$${END_IP} -j ACCEPT;
-          
-          IP_NUM=\$$((IP_NUM + GROUP_SIZE));
-          GROUP_COUNT=\$$((GROUP_COUNT + 1));
+        for GROUP_ID in $$(seq 1 255); do
+          iptables -A FORWARD -s 10.8.$$GROUP_ID.0/24 -d 10.8.$$GROUP_ID.0/24 -j ACCEPT;
+          GROUP_COUNT=$$((GROUP_COUNT + 1));
         done;
         
-        echo \"Configurados \$${GROUP_COUNT} grupos de \$${GROUP_SIZE} IPs cada uno\";
+        echo \"Configurados $$GROUP_COUNT grupos (cada uno /24)\";
         
-        # Bloquear trafico entre diferentes grupos (desde IP 16 hasta 10.8.15.255)
-        iptables -A FORWARD -m iprange --src-range 10.8.0.16-10.8.15.255 -m iprange --dst-range 10.8.0.16-10.8.15.255 -j DROP;
+        # Bloquear trafico entre diferentes grupos
+        iptables -A FORWARD -s 10.8.0.0/16 -d 10.8.0.0/16 -j DROP;
         
-        echo 'Reglas de aislamiento configuradas correctamente';
+        echo 'Reglas de aislamiento configuradas correctamente (Subred /16)';
         ovpn_run
       "
 
@@ -66,10 +52,10 @@ services:
     ports:
       - "8888:8080"
     environment:
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-SecurePassword123}  # Cambiar por una contraseña segura
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}
+      - SECRET_KEY=${SECRET_KEY:-simple_secret}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - /usr/bin/docker:/usr/bin/docker:ro
       - ./clients:/app/clients
       - ./ccd:/app/ccd
     depends_on:

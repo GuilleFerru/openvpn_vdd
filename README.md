@@ -92,25 +92,34 @@ Abrir en el navegador: `http://IP_DEL_SERVIDOR:8888`
 
 Ingresar con la contraseña configurada en `.env`
 
-## 🏗️ Arquitectura de Red
+## 🏗️ Arquitectura de Red (Actualizada a /16)
+
+Debido a limitaciones técnicas de OpenVPN con subredes masivas, se implementó una **Subred /16** que garantiza máxima estabilidad.
 
 ```
-Subred: 10.8.0.0/20 (4096 IPs disponibles)
+Subred: 10.8.0.0/16 (10.8.0.0 - 10.8.255.255)
 
-├── Admin (10.8.0.4 - 10.8.0.15)     → 12 IPs - VE TODO
-├── Grupo 1 (10.8.0.16 - 10.8.0.27) → 12 IPs - Aislado
-├── Grupo 2 (10.8.0.28 - 10.8.0.39) → 12 IPs - Aislado
-├── Grupo 3 (10.8.0.40 - 10.8.0.51) → 12 IPs - Aislado
+├── Admin (10.8.0.1 - 10.8.0.254)       → Grupo 0 (Admin)
+├── Grupo 1 (10.8.1.1 - 10.8.1.254)     → Grupo 1
+├── Grupo 2 (10.8.2.1 - 10.8.2.254)     → Grupo 2
 │   ...
-└── Grupo 340 (10.8.15.244 - 10.8.15.255) → 12 IPs - Aislado
+└── Grupo 255 (10.8.255.1 - 10.8.255.254) → Grupo 255
 ```
 
-**Capacidad máxima: 340 grupos × 12 clientes = 4080 clientes**
+**Capacidad:**
+- **~65,536** IPs totales.
+- **255** Grupos disponibles.
+- **254** Clientes por grupo.
+
+**Lógica de IPs:**
+- La estructura es: `10.8.[GRUPO].[CLIENTE]`
+- **Tercer octeto**: Indica el número de grupo (0-255).
+- **Cuarto octeto**: Indica el cliente (1-254).
 
 **Reglas de comunicación:**
-- ✅ Clientes del mismo grupo pueden verse entre sí
-- ✅ Admin puede ver a todos los clientes
-- ❌ Clientes de diferentes grupos NO pueden verse
+- ✅ Clientes del mismo grupo pueden verse entre sí.
+- ✅ Admin (Grupo 0) puede ver a todos los clientes.
+- ❌ Clientes de diferentes grupos NO pueden verse.
 
 ## 📁 Estructura del Proyecto
 
